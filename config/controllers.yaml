@@ -1,0 +1,92 @@
+# =========================================================================
+# ros2_control controller configuration for mmr_bot (Phase 2).
+#
+# Loaded by the gz_ros2_control system plugin (see urdf/gazebo.xacro), which
+# hands this file to the controller_manager it spawns inside Gazebo.
+#
+# WHAT LIVES WHERE
+#   urdf/ros2_control.xacro   which interfaces each joint EXPOSES
+#   this file                 which controllers CLAIM those interfaces
+#   mmr_pkg/kiwi_kinematics.py  the body-twist -> wheel-speed maths
+#
+# JOINT ORDER IS LOAD-BEARING.
+#   JointGroupVelocityController takes a Float64MultiArray on
+#   <controller>/commands and maps entry i to joints[i]. There are no names in
+#   that message, so the order below is the ONLY thing binding a number to a
+#   wheel. kiwi_drive_node emits wheel_0, wheel_1, wheel_2 in that order (its
+#   `wheel_joints` parameter) and pairs them positionally with
+#   `wheel_angles_deg` = (60, 180, 300). If you reorder one list you must
+#   reorder the other, or the robot will drive off at the wrong heading with
+#   no error message anywhere.
+# =========================================================================
+
+controller_manager:
+  ros__parameters:
+    # 100 Hz. This is a CHOICE, not a measurement: it must divide the Gazebo
+    # physics rate (1000 Hz at the default 1 ms max_step_size) evenly, and it
+    # comfortably exceeds kiwi_drive_node's 50 Hz publish_rate so the
+    # controller never starves. Raise it if you add a stiffer arm controller.
+    update_rate: 100
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    wheel_velocity_controller:
+      type: velocity_controllers/JointGroupVelocityController
+
+    arm_position_controller:
+      type: position_controllers/JointGroupPositionController
+
+# joint_state_broadcaster deliberately has NO ros__parameters block. Left
+# unconfigured it broadcasts every state interface the hardware exposes, which
+# is exactly what we want (3 wheels + 6 arm joints), and that is what
+# robot_state_publisher consumes to emit TF.
+
+# -------------------------------------------------------------------------
+# The three omniwheels, velocity commanded, in rad/s.
+#
+# Sign convention (identical to Phase 1's README and kiwi_kinematics.py):
+# positive = the wheel's contact patch pushes the robot along the tangential
+# direction at (mounting bearing + 90 deg), so all-three-positive spins the
+# robot clockwise seen from above.
+#
+# Do NOT add an `interface_name` key. JointGroupVelocityController is the
+# velocity specialisation of ForwardCommandController, and its on_init() calls
+#   set_parameter(rclcpp::Parameter("interface_name", HW_IF_VELOCITY))
+# which SILENTLY OVERWRITES anything set here - it does not error. (The
+# generic ForwardCommandController, by contrast, requires it.) So an
+# interface_name in this file would look meaningful and do nothing.
+# Ref: ros2_controllers jazzy, velocity_controllers/src/
+#      joint_group_velocity_controller.cpp
+# -------------------------------------------------------------------------
+wheel_velocity_controller:
+  ros__parameters:
+    joints:
+      - wheel_0_joint     # mounting bearing  60 deg   <- index 0
+      - wheel_1_joint     # mounting bearing 180 deg   <- index 1
+      - wheel_2_joint     # mounting bearing 300 deg   <- index 2
+
+# -------------------------------------------------------------------------
+# SO-101 arm, position commanded, in radians.
+#
+# Joint names are upstream's, UNPREFIXED. Phase 1 prefixed the link names with
+# `arm_` but deliberately left joint names alone so a LeRobot policy trained on
+# the SO-101 action space addresses them unchanged. Do not "tidy" these.
+#
+# Order matches the URDF chain base -> gripper. As with the wheels this order
+# defines the Float64MultiArray layout on
+# /arm_position_controller/commands.
+#
+# Position limits are NOT repeated here. They are on the <limit> tags in
+# urdf/arm.xacro, carried across verbatim from upstream, and ros2_control
+# reads them from the URDF. One source of truth.
+# -------------------------------------------------------------------------
+arm_position_controller:
+  ros__parameters:
+    joints:
+      - shoulder_pan
+      - shoulder_lift
+      - elbow_flex
+      - wrist_flex
+      - wrist_roll
+      - gripper

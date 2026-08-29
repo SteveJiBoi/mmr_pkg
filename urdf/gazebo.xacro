@@ -1,0 +1,260 @@
+<?xml version="1.0"?>
+<!-- ====================================================================== -->
+<!-- Gazebo Harmonic simulation tags (Phase 2).                             -->
+<!--                                                                        -->
+<!-- Nothing in this file affects the kinematic description. Expand with     -->
+<!-- gazebo:=false and you get the Phase 1 URDF back.                        -->
+<!--                                                                        -->
+<!-- Every plugin string, tag name and nesting level below was read from     -->
+<!-- upstream source on the branches that pair with Jazzy/Harmonic, not      -->
+<!-- from memory. Citations are inline. Where something could NOT be         -->
+<!-- verified without actually running Gazebo it is marked VERIFY ON THE     -->
+<!-- ROS BOX with the exact command to run.                                  -->
+<!-- ====================================================================== -->
+<!-- xmlns:gz is redeclared here as well as on the top-level <robot> so that
+     this file is well-formed XML on its own - otherwise the gz:expressed_in
+     attribute on <fdir1> is an unbound prefix and any standalone parse (an
+     editor, a linter, tools/check_phase2.py) fails before xacro ever runs. -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro"
+       xmlns:gz="http://gazebosim.org/schema">
+
+  <xacro:macro name="mmr_gazebo">
+
+    <!-- ================================================================ -->
+    <!-- READ THIS BEFORE DEBUGGING ANYTHING IN GAZEBO:                    -->
+    <!-- FIXED JOINTS DO NOT SURVIVE URDF -> SDF CONVERSION.               -->
+    <!--                                                                   -->
+    <!-- sdformat 14 lumps fixed-joint children INTO THEIR PARENT by       -->
+    <!-- default (parser_urdf.cc, g_reduceFixedJoints defaults true). The   -->
+    <!-- direction is child -> parent, and our root is base_footprint, so   -->
+    <!-- the SDF Gazebo actually simulates has ONE body:                    -->
+    <!--                                                                   -->
+    <!--     base_footprint   <- base_link + laser_frame + the whole arm's  -->
+    <!--                         fixed-attached bits lumped in             -->
+    <!--     wheel_0/1/2_link, arm_* (moving)   <- survive, not fixed       -->
+    <!--                                                                   -->
+    <!-- So `gz topic -l` will NOT show a base_link, and this is CORRECT,   -->
+    <!-- not a bug. Consequences that matter:                              -->
+    <!--                                                                   -->
+    <!--  * base_footprint has no <inertial> in the URDF. That is fine:     -->
+    <!--    sdformat allocates one and accumulates the lumped masses        -->
+    <!--    (parser_urdf.cc ~L803). It does not error.                      -->
+    <!--  * The lidar <sensor> below is pose-compensated as it is moved to  -->
+    <!--    the lumped parent (ReduceSDFExtensionsTransform, ~L2600), so it -->
+    <!--    still sits at the right place in space.                         -->
+    <!--  * TF is unaffected. robot_state_publisher builds /tf from the     -->
+    <!--    URDF, not from Gazebo's SDF, so base_link and laser_frame exist -->
+    <!--    in ROS regardless.                                              -->
+    <!--  * gz:expressed_in="base_link" WOULD FAIL - that frame is gone.    -->
+    <!--    The wheel friction below references wheel_N_link, which is      -->
+    <!--    attached by a continuous joint and therefore survives.          -->
+    <!--                                                                   -->
+    <!-- DO NOT "fix" this with <disableFixedJointLumping>. That tag does   -->
+    <!-- not preserve a fixed joint - it converts it into a REVOLUTE joint  -->
+    <!-- with (0,0) limits (parser_urdf.cc ~L1530). Every fixed joint would -->
+    <!-- become movable, taking this robot from the specified 9 movable     -->
+    <!-- joints to 13 and quietly breaking the joint contract. If you ever  -->
+    <!-- genuinely need a frame kept, the correct tag is                    -->
+    <!--     <gazebo reference="THE_JOINT_NAME">                            -->
+    <!--       <preserveFixedJoint>true</preserveFixedJoint>                -->
+    <!--     </gazebo>                                                      -->
+    <!-- and note `reference` is the JOINT name, not the child link. Also   -->
+    <!-- note that preserving a fixed joint whose child link has no mass    -->
+    <!-- causes sdformat to DELETE that link outright ("is not modeled in   -->
+    <!-- sdf", ~L2775), which is why arm_gripper_frame_link (mass 1e-9) is  -->
+    <!-- deliberately left to be lumped.                                    -->
+    <!-- ================================================================ -->
+
+    <!-- ================================================================ -->
+    <!-- ros2_control, model level.                                        -->
+    <!--                                                                   -->
+    <!-- Bare <gazebo> with NO reference attribute = model scope. Verified  -->
+    <!-- against gz_ros2_control jazzy,                                     -->
+    <!--   gz_ros2_control_demos/urdf/test_cart_velocity.xacro.urdf         -->
+    <!-- which uses exactly this filename/name pair, and against            -->
+    <!--   src/gz_ros2_control_plugin.cpp L277, _sdf->Get<std::string>      -->
+    <!--     ("parameters")                                                 -->
+    <!-- for the child element name. It is <parameters>, NOT                -->
+    <!-- <parameters_file>, and it may be repeated to load several YAMLs.   -->
+    <!--                                                                   -->
+    <!-- If the plugin fails to load, try the fully decorated library name  -->
+    <!-- filename="libgz_ros2_control-system.so" - the ros-controls docs    -->
+    <!-- use that form. Both should resolve; the short form is what the     -->
+    <!-- in-repo demo actually ships.                                       -->
+    <!-- ================================================================ -->
+    <gazebo>
+      <plugin filename="gz_ros2_control-system"
+              name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+        <parameters>$(find mmr_pkg)/config/controllers.yaml</parameters>
+      </plugin>
+    </gazebo>
+
+    <!-- ================================================================ -->
+    <!-- OMNIWHEEL FRICTION - the one thing that makes a kiwi drive work.   -->
+    <!--                                                                   -->
+    <!-- A plain cylinder grips in every direction, which would weld the    -->
+    <!-- robot to the floor: three wheels each refusing to slide sideways   -->
+    <!-- cannot resolve any holonomic motion. Real omniwheels have free     -->
+    <!-- rollers around the rim whose axes are TANGENTIAL, so the wheel     -->
+    <!-- grips along its rolling direction and slides freely along its own  -->
+    <!-- axle. That is anisotropic friction:                                -->
+    <!--                                                                   -->
+    <!--     mu   applies along fdir1              -> ALONG THE AXLE, slips -->
+    <!--     mu2  applies perpendicular to fdir1   -> rolling dir,   grips  -->
+    <!--                                                                   -->
+    <!-- WHY fdir1 IS SAFE TO EXPRESS IN THE WHEEL'S OWN FRAME:             -->
+    <!-- the wheel spins about its local +X (see base.xacro: the joint is   -->
+    <!-- Rz(angle) and <axis xyz="1 0 0"/>), and a rotation about X leaves   -->
+    <!-- the X axis itself invariant. So (1,0,0) in wheel_N_link is a       -->
+    <!-- CONSTANT direction in world terms as the wheel turns - it always   -->
+    <!-- points radially outward from the chassis. This is what makes a     -->
+    <!-- 90-degree-roller omniwheel simpler than a mecanum, where the       -->
+    <!-- rollers sit at 45 deg and fdir1 genuinely has to be pinned to the  -->
+    <!-- chassis frame.                                                     -->
+    <!--                                                                   -->
+    <!-- WHY THIS IS NESTED AS <collision><surface> AND NOT THE FLAT FORM.  -->
+    <!-- sdformat's URDF parser accepts friction two different ways, and    -->
+    <!-- they are NOT equivalent:                                           -->
+    <!--                                                                   -->
+    <!--   FLAT  <gazebo reference="..."><mu1/><mu2/><fdir1/>               -->
+    <!--         Recognised (parser_urdf.cc L1413-1423), but read through   -->
+    <!--         GetKeyValueAsString, which takes only the text/value= and  -->
+    <!--         then re-emits a FRESH element (L1873). ATTRIBUTES ARE      -->
+    <!--         SILENTLY DROPPED. gz:expressed_in would vanish and the     -->
+    <!--         friction would quietly use the wrong frame. This is the    -->
+    <!--         form most examples use, and it is the trap here.           -->
+    <!--                                                                   -->
+    <!--   BLOB  <gazebo reference="..."><collision><surface>...            -->
+    <!--         Special-cased at L1322-1365 into collision_blobs, then     -->
+    <!--         grafted by CopyBlob (L1584-1601) via tinyxml2 DeepClone,   -->
+    <!--         WHICH COPIES ATTRIBUTES. This is the only path that keeps  -->
+    <!--         gz:expressed_in, so it is the one used here.               -->
+    <!--                                                                   -->
+    <!-- Note the blob is verbatim SDF, so the tag is <mu>, NOT <mu1>. The  -->
+    <!-- "1" spelling belongs only to the flat URDF-extension form.         -->
+    <!--                                                                   -->
+    <!-- The attribute survives sdformat's schema validation because        -->
+    <!-- parser.cc L1441-1448 whitelists any attribute containing ':' as a  -->
+    <!-- custom namespaced attribute. sdformat issue #1300 raised exactly   -->
+    <!-- this structure and was closed as not-reproducible, with a          -->
+    <!-- maintainer showing `gz sdf -p` retaining gz:expressed_in.          -->
+    <!--                                                                   -->
+    <!-- STILL WORTH CHECKING ONCE, because I could not run Gazebo:         -->
+    <!--     ros2 run xacro xacro urdf/mmr_bot.urdf.xacro > /tmp/r.urdf     -->
+    <!--     gz sdf -p /tmp/r.urdf | grep -A3 fdir1                         -->
+    <!-- If gz:expressed_in has been dropped, the fallback is NOT to write  -->
+    <!-- 1 0 0 without it. DART resolves a bare fdir1 in the COLLISION      -->
+    <!-- frame - ContactSurface.cpp L336-345 rotates it by the ShapeNode    -->
+    <!-- transform, which here includes rpy="0 pi/2 0". So the fallback is  -->
+    <!--     <fdir1>0 0 1</fdir1>                                           -->
+    <!-- (collision-local Z, which Ry(90) maps onto the link's +X axle).     -->
+    <!--                                                                   -->
+    <!-- FAILURE SIGNATURE if you get this wrong: the robot will drive      -->
+    <!-- forwards and rotate more or less fine, but strafing (pure          -->
+    <!-- linear.y) will be sluggish, veer, or stall completely. Test with   -->
+    <!--     ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist \        -->
+    <!--         '{linear: {y: 0.2}}'                                       -->
+    <!-- and watch whether it tracks sideways cleanly.                      -->
+    <!--                                                                   -->
+    <!-- THESE TWO NUMBERS ARE MODELLING CHOICES, NOT MEASUREMENTS.         -->
+    <!-- Nothing in the STEP or any datasheet gives a friction coefficient. -->
+    <!-- mu2=1.0 is ordinary rubber-on-floor; mu=0.05 is "the rollers turn  -->
+    <!-- freely but not frictionlessly". Tune them against how the real     -->
+    <!-- robot behaves - they are the first thing to reach for if the sim   -->
+    <!-- drives differently from the hardware.                              -->
+    <!-- ================================================================ -->
+    <xacro:property name="roller_mu"  value="0.05"/>
+    <xacro:property name="rolling_mu" value="1.0"/>
+
+    <xacro:macro name="omni_wheel_friction" params="index">
+      <gazebo reference="wheel_${index}_link">
+        <collision>
+          <surface>
+            <friction>
+              <ode>
+                <mu>${roller_mu}</mu>
+                <mu2>${rolling_mu}</mu2>
+                <fdir1 gz:expressed_in="wheel_${index}_link">1 0 0</fdir1>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+      </gazebo>
+    </xacro:macro>
+
+    <xacro:omni_wheel_friction index="0"/>
+    <xacro:omni_wheel_friction index="1"/>
+    <xacro:omni_wheel_friction index="2"/>
+
+    <!-- ================================================================ -->
+    <!-- RPLIDAR C1.                                                       -->
+    <!--                                                                   -->
+    <!-- No <pose> child: the sensor sits at laser_frame's origin, which is -->
+    <!-- exactly where the real scan plane is. That is not a coincidence -   -->
+    <!-- sensors.xacro derives laser_z from the datasheet's 29.8 mm         -->
+    <!-- "Laser Receiving and Emitting Height" specifically so the frame    -->
+    <!-- origin IS the scan plane and this block needs no fudge offset.     -->
+    <!--                                                                   -->
+    <!-- type="gpu_lidar" and the <lidar> child are the current spellings   -->
+    <!-- (sdformat 1.11 sensor.sdf); "ray"/"gpu_ray" are legacy aliases     -->
+    <!-- flagged for deprecation. NOTE the official gz-sim example world    -->
+    <!-- gpu_lidar_sensor.sdf uses <alwaysOn>, which is NOT in the spec and -->
+    <!-- is silently ignored - the correct tag is <always_on>. Do not copy  -->
+    <!-- that example.                                                      -->
+    <!--                                                                   -->
+    <!-- Datasheet figures (Slamtec C1 rev 1.2), all sourced:               -->
+    <!--     360 deg, 10 Hz, 0.05 - 12 m.                                   -->
+    <!-- 500 samples gives 0.72 deg/step, the C1's quoted angular           -->
+    <!-- resolution. <resolution>0.01</resolution> under <range> is the     -->
+    <!-- 1 cm distance quantisation, NOT an angular figure.                 -->
+    <!-- ================================================================ -->
+    <xacro:property name="lidar_samples" value="500"/>
+
+    <gazebo reference="laser_frame">
+      <sensor name="laser" type="gpu_lidar">
+        <always_on>true</always_on>
+        <update_rate>10</update_rate>
+        <visualize>true</visualize>
+
+        <!-- Pinned explicitly. Omit it and gz derives a scoped name like
+             /world/empty/model/mmr_bot/link/base_footprint/sensor/laser/scan
+             (note base_footprint, because of the lumping described above),
+             which the bridge in gazebo.launch.py would then have to guess. -->
+        <topic>scan</topic>
+
+        <!-- Makes the LaserScan come out with frame_id "laser_frame" so it
+             matches TF. Without it you get gz's scoped sensor name and RViz
+             silently drops every scan. Consumed by gz-sensors
+             (Sensor.cc L186), not by ros_gz_bridge - the bridge just copies
+             the gz header through. Spelling is exactly gz_frame_id;
+             ignition_frame_id and <ros><frame_name> do not exist on
+             Harmonic. A "not part of the SDFormat spec" warning on load is
+             expected and benign (gz-sensors issue #306). -->
+        <gz_frame_id>laser_frame</gz_frame_id>
+
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>${lidar_samples}</samples>
+              <resolution>1</resolution>
+              <!-- gz computes step = (max - min) / (samples - 1), so a naive
+                   -pi..+pi aliases ray 0 and ray 499 onto the same bearing
+                   and you lose a beam. Stopping one full step short of +pi
+                   gives 500 DISTINCT bearings at exactly 2pi/500 = 0.72 deg.
+                   Left symbolic so it stays correct if you change samples. -->
+              <min_angle>${-pi}</min_angle>
+              <max_angle>${pi - 2*pi/lidar_samples}</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.05</min>
+            <max>12.0</max>
+            <resolution>0.01</resolution>
+          </range>
+        </lidar>
+      </sensor>
+    </gazebo>
+
+  </xacro:macro>
+
+</robot>

@@ -21,8 +21,14 @@ def generate_launch_description():
 
     # ParameterValue(..., value_type=str) is required: without it the launch
     # system tries to infer a type from the URDF text and mangles it.
+    #
+    # gazebo:=false keeps this a pure Phase 1 description - no <gazebo> or
+    # <ros2_control> blocks at all. robot_state_publisher would ignore them
+    # anyway, but there is no reason to hand RViz a URDF full of simulation
+    # tags, and it keeps this launch file working if gz_ros2_control is not
+    # even installed.
     robot_description = ParameterValue(
-        Command(["xacro ", model]), value_type=str)
+        Command(["xacro ", model, " gazebo:=false"]), value_type=str)
 
     return LaunchDescription([
         DeclareLaunchArgument(

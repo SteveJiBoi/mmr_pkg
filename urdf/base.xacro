@@ -61,10 +61,29 @@
        the STEP says 30.000 mm and the STEP wins. See README. -->
   <xacro:property name="wheel_z" value="${wheel_radius - base_link_height}"/>
 
-  <!-- Emit <inertial> blocks? Off by default: the chassis mass properties are
-       not yet supplied and this package will not invent them. See
-       inertial_macros.xacro and the TODO block further down. -->
-  <xacro:property name="use_inertial" value="false"/>
+  <!-- Emit <inertial> blocks?
+       Phase 1 default was false: no mass properties had been supplied and the
+       brief forbids placeholder tensors, so RViz got a description with no
+       invented numbers in it.
+
+       Phase 2 default is TRUE, because Gazebo cannot simulate a link without
+       an inertial. The tensors are NOT placeholders and NOT identity - they
+       are integrated from the real collision geometry by
+       tools/estimate_inertia.py. Read that file's docstring before trusting
+       them: the SHAPE of every tensor is exact geometry, the SCALE depends on
+       a mass, and only two of the three masses have a source.
+
+       Set false to get the Phase 1 behaviour back. -->
+  <xacro:property name="use_inertial" value="true"/>
+
+  <!-- Masses. PROVENANCE MATTERS HERE - see README "Inertials".
+       chassis : GIVEN in the brief, section 3.1.
+       wheel   : *** THE ONE UNSOURCED NUMBER IN THIS PACKAGE. ***
+                 Not measured, not from a datasheet. It exists so the sim runs.
+                 Weigh one wheel and replace it. Wheel inertia sets drive
+                 acceleration, so a wrong value reads as a tuning problem. -->
+  <xacro:property name="chassis_mass" value="1.0"/>
+  <xacro:property name="wheel_mass"   value="0.100"/>   <!-- TODO(weigh me) -->
 
   <xacro:property name="deg" value="${pi/180.0}"/>
 
@@ -141,16 +160,27 @@
       </geometry>
     </collision>
 
-    <!-- TODO(inertial): chassis mass excluding arm, Pi and battery is 1.0 kg
-         per the brief, but CoM and the inertia tensor are not yet supplied.
-         Paste the Fusion 360 physical-properties numbers into
-         inertial_macros.xacro's inertial_from_fusion and set
-         use_inertial to true. No placeholder tensor is emitted here. -->
+    <!-- Inertia integrated from the collision set above (two plate cylinders,
+         three motor pods, camera pod, Pi stack) at one uniform density scaled
+         to the brief's 1.0 kg, combined by the parallel-axis theorem.
+         Regenerate with `python tools/estimate_inertia.py`.
+
+         The visual mesh is deliberately NOT used: it is a decimated CAD export
+         and is not watertight, so a volume integral over it is meaningless
+         (trimesh returns a number regardless, which is the trap).
+
+         Resulting CoM (-0.3, -0.0, +21.8) mm - essentially centred and low,
+         as expected for a heavy base plate. Radius of gyration 88.9 mm
+         against a 120 mm plate radius.
+
+         Still an approximation: one density across plates, Pi and motors. If
+         you paste real Fusion numbers, use inertial_from_fusion instead - it
+         handles the kg*mm^2 and product-of-inertia sign conversions. -->
     <xacro:if value="${use_inertial}">
-      <!-- <xacro:inertial_from_fusion mass="1.0"
-             ixx="TODO" iyy="TODO" izz="TODO"
-             ixy="TODO" ixz="TODO" iyz="TODO"
-             com_x_mm="TODO" com_y_mm="TODO" com_z_mm="TODO"/> -->
+      <xacro:inertial_exact mass="${chassis_mass}"
+          ox="-0.000277" oy="-0.000032" oz="0.021827"
+          ixx="0.004760788" iyy="0.005840846" izz="0.007861537"
+          ixy="0.000000057" ixz="0.000351742" iyz="0.000001738"/>
     </xacro:if>
   </link>
 
@@ -192,10 +222,12 @@
         </geometry>
       </collision>
 
-      <!-- TODO(inertial): per-wheel mass not supplied. See base_link. -->
+      <!-- Solid cylinder about local +X, exact for the modelled collision
+           shape. The MASS is the unsourced number - see the wheel_mass
+           property at the top of this file. -->
       <xacro:if value="${use_inertial}">
-        <!-- <xacro:inertial_cylinder_x mass="TODO"
-               radius="${wheel_radius}" length="${wheel_width}"/> -->
+        <xacro:inertial_cylinder_x mass="${wheel_mass}"
+               radius="${wheel_radius}" length="${wheel_width}"/>
       </xacro:if>
     </link>
   </xacro:macro>

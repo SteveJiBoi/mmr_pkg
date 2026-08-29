@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# colcon, if you ever build in-tree
+/install/
+/log/
+
+# NOTE: build/robot.urdf is deliberately NOT ignored. It is the expanded
+# description that tools/check_urdf_lite.py, tools/check_phase2.py and
+# test_kiwi_kinematics.py all read, and having it in the tree means a reviewer
+# can see the actual URDF without needing xacro. Regenerate with:
+#   python tools/xacro_lite.py urdf/mmr_bot.urdf.xacro -o build/robot.urdf

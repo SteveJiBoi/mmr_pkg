@@ -10,15 +10,24 @@
        CAD (0.200, -133.78) mm, giving 133.781 mm forward of base_link and
        0.004 mm off centre (i.e. on the forward axis to within 4 microns).
 
-       TODO(confirm z): 0.105180 m is the MID-HEIGHT of the turret shell
-       (CAD z 137.000..163.241 mm). The true optical/scan plane of an RPLIDAR
-       C1 is not derivable from this STEP - the CAD body is a solid shell with
-       no modelled optics. If you want the scan plane exactly, measure from
-       the datasheet and override laser_z below. Everything else in this file
-       is measured, this one number is a documented approximation. -->
+       z RESOLVED in Phase 2 from the datasheet, no longer a guess. The
+       Slamtec C1 mechanical drawing (rev 1.2, Fig 4-1) dimensions the
+       "Laser Receiving and Emitting Height" at 29.800 mm above the bottom
+       mounting face. The collision hull's lowest face is a genuinely planar
+       48-vertex surface at -28.179 mm in this frame, spanning exactly
+       +/-27.800 mm in x and y, which is the datasheet's 55.6 mm mounting
+       base. So:
+           scan plane = -28.179 + 29.800 = +1.621 mm from the mesh origin
+           laser_z    =  0.105180 + 0.001621 = 0.106801 m
+       Cross-check: that puts the mounting face at base_link z = 0.077001 m,
+       which is the top plate's upper surface (top_plate_z 0.072 + 0.005
+       thickness) to within 1 micron. The lidar bolts to the top plate, as
+       drawn. The Phase 1 turret-mid-height guess was low by 1.621 mm.
+       Body bbox also confirms the mesh: 55.6 x 41.3 mm matches the
+       datasheet exactly (the 64.8 mm x span is body + UART connector). -->
   <xacro:property name="laser_x" value="0.133781"/>
   <xacro:property name="laser_y" value="0.000004"/>
-  <xacro:property name="laser_z" value="0.105180"/>
+  <xacro:property name="laser_z" value="0.106801"/>
 
   <!-- rpy is identity: the lidar body is axis-aligned with base_link in CAD,
        and the C1 scans in its own XY plane with zero angle at its +X. -->
@@ -46,8 +55,16 @@
         <mesh filename="package://mmr_pkg/meshes/collision/rplidar_c1.stl"/>
       </geometry>
     </collision>
-    <!-- TODO(inertial): RPLIDAR C1 mass not supplied. Datasheet value or a
-         Fusion physical-properties readout would fill this. Not invented. -->
+    <!-- Mass 110 g is the datasheet's typical figure (rev 1.2, Fig 2-9), so
+         this one is sourced. The tensor is a uniform-density integral over the
+         convex hull; the real unit is denser at the motor end, but the hull
+         has the right outline and the part is small enough that the error is
+         not going to change how the robot behaves.
+         Regenerate with tools/estimate_inertia.py. -->
+    <xacro:inertial_exact mass="0.110"
+        ox="-0.001128" oy="-0.000003" oz="-0.009419"
+        ixx="0.000037988" iyy="0.000041294" izz="0.000050888"
+        ixy="0.0" ixz="-0.000000835" iyz="0.0"/>
   </link>
 
   <!-- NOTE: the brief says "no cameras yet", but the STEP does model one:

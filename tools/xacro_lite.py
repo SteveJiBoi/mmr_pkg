@@ -2,13 +2,15 @@
 
 This machine has no ROS 2, so `xacro` cannot be run here. This implements the
 subset of xacro that mmr_pkg actually uses -- includes, properties, ${}
-expressions, macros with default and block parameters, and xacro:if -- purely
-so the description can be expanded and inspected before it reaches a ROS box.
+expressions, macros with default and block parameters, xacro:if/unless, and
+xacro:arg with $(arg ...) -- purely so the description can be expanded and
+inspected before it reaches a ROS box.
 
 It is a DEVELOPMENT AID, not a substitute for the real thing. The real
 `xacro` remains the authority; run it on the ROS machine.
 
     python tools/xacro_lite.py urdf/mmr_bot.urdf.xacro -o /tmp/robot.urdf
+    python tools/xacro_lite.py urdf/mmr_bot.urdf.xacro gazebo:=false -o -
 """
 import argparse
 import math
@@ -20,6 +22,7 @@ XNS = "http://www.ros.org/wiki/xacro"
 X = "{%s}" % XNS
 EXPR = re.compile(r"\$\{([^}]*)\}")
 FIND = re.compile(r"\$\(find\s+([^)]+)\)")
+ARG = re.compile(r"\$\(arg\s+([^)]+)\)")
 
 FUNCS = {k: getattr(math, k) for k in
          ("sin", "cos", "tan", "asin", "acos", "atan", "atan2", "sqrt",
@@ -92,18 +95,83 @@ def resolve_find(path, pkg_root, pkg_name):
 
 
 class Xacro:
-    def __init__(self, pkg_root, pkg_name):
+    def __init__(self, pkg_root, pkg_name, cli_args=None):
         self.pkg_root = os.path.abspath(pkg_root)
         self.pkg_name = pkg_name
         self.props = {}
         self.macros = {}
         self.includes = []
+        self.cli_args = dict(cli_args or {})
+        self.args = {}
 
     # ---------------------------------------------------------------- load
     def load(self, path):
         root = ET.parse(path).getroot()
         self._inline_includes(root, os.path.dirname(os.path.abspath(path)))
+        self._resolve_args(root)
         return root
+
+    def _resolve_args(self, root):
+        """Handle <xacro:arg> and $(arg name).
+
+        Args are GLOBAL in xacro, not lexically scoped like properties, so a
+        single flat pass over the already-inlined tree is faithful. Order does
+        not matter: every declaration is collected before any substitution.
+
+        Known gap vs real xacro: $(arg ...) is resolved AFTER includes have
+        been inlined, so it cannot be used inside an <xacro:include filename>.
+        Nothing in this package does that; if that ever changes, this is where
+        it would need fixing.
+        """
+        for parent in root.iter():
+            for child in list(parent):
+                if child.tag == X + "arg":
+                    name = child.get("name")
+                    if name is None:
+                        raise XacroError("<xacro:arg> without a name")
+                    if name in self.cli_args:
+                        self.args[name] = self.cli_args[name]
+                    elif "default" in child.attrib:
+                        self.args[name] = child.get("default")
+                    else:
+                        raise XacroError(
+                            f"$(arg {name}) has no default and was not passed "
+                            f"on the command line as {name}:=value")
+                    parent.remove(child)
+
+        unknown = set(self.cli_args) - set(self.args)
+        if unknown:
+            raise XacroError(f"passed {sorted(unknown)} on the command line "
+                             f"but no <xacro:arg> declares them")
+
+        def sub(mo):
+            name = mo.group(1).strip()
+            if name not in self.args:
+                raise XacroError(f"$(arg {name}) is not declared by any "
+                                 f"<xacro:arg>")
+            return self.args[name]
+
+        # $(find pkg) is resolved here too, not just in <xacro:include
+        # filename>. Real xacro substitutes it in element TEXT as well as in
+        # attributes - gazebo.xacro relies on that for
+        # <parameters>$(find mmr_pkg)/config/controllers.yaml</parameters>.
+        # Leaving it unresolved here would make this expander quietly disagree
+        # with the real one, which is the one thing it must not do.
+        def find(v):
+            return resolve_find(v, self.pkg_root, self.pkg_name)
+
+        for e in root.iter():
+            for k, v in list(e.attrib.items()):
+                if "$(arg" in v:
+                    v = ARG.sub(sub, v)
+                if "$(find" in v:
+                    v = find(v)
+                e.attrib[k] = v
+            if e.text:
+                if "$(arg" in e.text:
+                    e.text = ARG.sub(sub, e.text)
+                if "$(find" in e.text:
+                    e.text = find(e.text)
 
     def _inline_includes(self, elem, base):
         out = []
@@ -210,10 +278,27 @@ def main():
     ap.add_argument("-o", "--out", default="-")
     ap.add_argument("--pkg-root", default=".")
     ap.add_argument("--pkg-name", default="mmr_pkg")
+    ap.add_argument("mappings", nargs="*", metavar="name:=value",
+                    help="override an <xacro:arg>, same syntax as real xacro")
     a = ap.parse_args()
 
+    cli = {}
+    for m in a.mappings:
+        if ":=" not in m:
+            ap.error(f"mapping {m!r} is not of the form name:=value")
+        k, v = m.split(":=", 1)
+        cli[k] = v
+
     ET.register_namespace("xacro", XNS)
-    x = Xacro(a.pkg_root, a.pkg_name)
+    # Keep the `gz:` prefix literally `gz:`. ElementTree otherwise invents
+    # ns0:, ns1:, ... which is semantically identical XML but NOT equivalent
+    # here: sdformat parses with TinyXML2, which does no namespace resolution
+    # at all and matches the attribute name as a raw string. `ns0:expressed_in`
+    # would be silently ignored, and the omniwheel friction would quietly
+    # revert to whatever the default fdir1 interpretation is. Real xacro
+    # preserves prefixes; this keeps the offline output faithful to it.
+    ET.register_namespace("gz", "http://gazebosim.org/schema")
+    x = Xacro(a.pkg_root, a.pkg_name, cli)
     root = x.load(a.xacro)
     out = x.expand(root)
     for k in list(out.attrib):
@@ -229,6 +314,7 @@ def main():
             f.write(text + "\n")
         print(f"expanded {a.xacro} -> {a.out}")
         print(f"  includes:   {', '.join(x.includes)}")
+        print(f"  args:       {x.args or '(none)'}")
         print(f"  properties: {len(x.props)}   macros: {len(x.macros)}")
 
 

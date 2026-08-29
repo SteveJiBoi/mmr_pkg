@@ -17,16 +17,48 @@
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
 
+  <!-- Phase 1: description + RViz -->
   <exec_depend>xacro</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>joint_state_publisher</exec_depend>
   <exec_depend>joint_state_publisher_gui</exec_depend>
   <exec_depend>rviz2</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
 
+  <!-- Phase 2: kiwi_drive_node -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <!-- numpy is used only by forward_kinematics (pseudo-inverse) and is
+       imported lazily; the inverse_kinematics path that the node runs every
+       cycle is pure Python. Declared anyway because odometry calls FK. -->
+  <exec_depend>python3-numpy</exec_depend>
+
+  <!-- Phase 2: ros2_control. The three controller packages are named
+       individually rather than depending on the ros2_controllers metapackage,
+       so the dependency list states exactly which plugins this package's
+       config/controllers.yaml actually loads. -->
+  <exec_depend>controller_manager</exec_depend>
+  <exec_depend>joint_state_broadcaster</exec_depend>
+  <exec_depend>velocity_controllers</exec_depend>
+  <exec_depend>position_controllers</exec_depend>
+
+  <!-- Phase 2: Gazebo Harmonic. Only needed to simulate; the description and
+       kiwi_drive_node work on real hardware without these installed. -->
+  <exec_depend>ros_gz_sim</exec_depend>
+  <exec_depend>ros_gz_bridge</exec_depend>
+  <exec_depend>gz_ros2_control</exec_depend>
+
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>python3-pytest</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

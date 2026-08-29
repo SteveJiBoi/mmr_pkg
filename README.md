@@ -1,17 +1,20 @@
-# mmr_pkg — `mmr_bot` description (Phase 1)
+# mmr_pkg — `mmr_bot` description + kiwi drive
 
 URDF/xacro description of a three-wheeled kiwi-drive holonomic base carrying an
 SO-101 arm, a Raspberry Pi 5 and an RPLIDAR C1. Geometry is derived from the
 Fusion 360 STEP export (`mmr_bot.step`); the arm is vendored from
 [TheRobotStudio/SO-ARM100](https://github.com/TheRobotStudio/SO-ARM100).
 
-**Phase 1 is RViz only.** No Gazebo, no `ros2_control`, no controllers. Phase 2
-starts only once you have confirmed this looks right.
+- **Phase 1** — description only: meshes, frames, inertials, RViz.
+- **Phase 2** — Gazebo Harmonic, `ros2_control`, and the `kiwi_drive_node`
+  whose IK is meant to be diffed against your ESP32 firmware.
 
 > **Read the [Verification status](#verification-status) section before trusting
 > anything here.** This package was built on a Windows machine with no ROS 2
-> install. `xacro`, `check_urdf`, `rviz2` and `colcon` were **never run**. The
-> checks that *were* run are offline reimplementations, listed below.
+> install. `xacro`, `check_urdf`, `rviz2`, `colcon` and **Gazebo** were *never
+> run*. The checks that *were* run are offline reimplementations, listed below.
+> Phase 2 in particular contains simulation behaviour that literally cannot be
+> confirmed without running it — those points are called out individually.
 
 ---
 
@@ -21,14 +24,37 @@ starts only once you have confirmed this looks right.
 cd ~/ros2_ws/src
 cp -r /path/to/mmr_pkg .
 cd ~/ros2_ws
+rosdep install --from-paths src -y --ignore-src
 colcon build --packages-select mmr_pkg
 source install/setup.bash
+```
 
+**Phase 1 — description in RViz:**
+
+```bash
 ros2 launch mmr_pkg display.launch.py
 ```
 
 Arguments: `gui:=false` swaps the slider GUI for a plain `joint_state_publisher`;
 `model:=` and `rviz_config:=` override the paths.
+
+**Phase 2 — Gazebo:**
+
+```bash
+ros2 launch mmr_pkg gazebo.launch.py
+
+# strafe sideways: the motion that only works if omniwheel friction is right
+ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist '{linear: {y: 0.2}}'
+```
+
+Arguments: `headless:=true`, `rviz:=true`, `world:=`, `spawn_z:=`.
+
+The description also builds without any simulation tags, which is what
+`display.launch.py` uses:
+
+```bash
+xacro urdf/mmr_bot.urdf.xacro gazebo:=false > /tmp/robot.urdf
+```
 
 ---
 
@@ -321,28 +347,42 @@ and at that point the LeRobot action-space mapping needs revisiting anyway.
 
 Marked `TODO` in the source, listed here so none of them hide.
 
-1. **`laser_frame` z = 0.105180 m is approximate.** It is the *mid-height of the
-   turret shell* (CAD z 137.000…163.241 mm). The CAD body is a solid shell with
-   no modelled optics, so the true scan plane is not derivable from this STEP.
-   x and y are solid (rotor axis located from the turret geometry: 133.781 mm
-   forward, 0.004 mm off centre). Override `laser_z` in `sensors.xacro` with the
-   datasheet value if you want it exact.
-2. **No inertials on the chassis.** You said you would paste Fusion 360 values.
-   Until then `use_inertial` in `base.xacro` is `false` and **no `<inertial>` is
-   emitted for `base_link`, the wheels or `laser_frame`** — per the brief, no
-   placeholder identity tensors anywhere. `urdf/inertial_macros.xacro` ships
-   working macros ready to receive them, including `inertial_from_fusion`, which
-   handles both unit conversions for you: Fusion reports kg·mm² (divide by 1e6)
-   and uses the **opposite sign convention for products of inertia** (Ixy_urdf =
-   −Ixy_fusion). The arm's inertials are real, from upstream, and are present.
+1. ~~**`laser_frame` z is approximate.**~~ **RESOLVED in Phase 2.** The Slamtec
+   C1 drawing (rev 1.2, Fig 4-1) dimensions the scan plane at 29.800 mm above
+   the mounting face; the collision hull's lowest face is a genuinely planar
+   48-vertex surface at −28.179 mm spanning exactly ±27.800 mm, i.e. the
+   datasheet's 55.6 mm mounting base. So `laser_z = 0.106801 m`, and as a
+   cross-check that puts the mounting face at `base_link` z = 0.077001 m — the
+   top plate's upper surface to within 1 micron. The Phase 1 turret-mid-height
+   guess was low by 1.621 mm.
+2. **Inertials are present, but ONE MASS IS UNSOURCED.** `use_inertial` is now
+   `true`. The tensor *shapes* are exact — integrals over the actual Phase 1
+   collision geometry via the parallel-axis theorem
+   (`tools/estimate_inertia.py`), deliberately not over the decimated,
+   non-watertight visual mesh (trimesh returns a number for that regardless,
+   which is the trap). The *scales* are the issue:
+   - `base_link` 1.0 kg — from the brief. Sourced.
+   - `laser_frame` 0.110 kg — datasheet typical. Sourced.
+   - **`wheel_mass` 0.100 kg — invented. Please weigh one wheel.** This is the
+     only unsourced number in the package. It is flagged in `base.xacro`, in
+     `estimate_inertia.py` output, and here. It affects how the robot
+     accelerates in Gazebo but nothing about its geometry.
+
+   `inertial_from_fusion` is still available in `inertial_macros.xacro` if you
+   want to paste real Fusion 360 numbers; it handles both conversions (kg·mm²
+   → kg·m², and Fusion's **opposite sign convention** for products of inertia,
+   Ixy_urdf = −Ixy_fusion).
 3. **A camera is modelled although the brief says there is none.** An Innomaker
    U20CAM-1080P on a `BaseCamMount`, facing forward. It is currently merged into
    the `base_link` visual, with its hull in `camera_pod.stl`. Say the word and it
    can be split into a proper `camera_link` + optical frame — the mount transform
    is measurable from the same STEP.
 4. **`arm_gripper_frame_link` has a zero inertia tensor** (mass 1e-9). That is
-   upstream's dummy frame, kept verbatim. Harmless for RViz; may want a tiny
-   non-zero diagonal in Phase 2.
+   upstream's dummy frame, kept verbatim. Harmless for RViz, and harmless in
+   Gazebo too: it is attached by a fixed joint, so it gets lumped into its
+   parent and never reaches the physics engine as a body. Deliberately *not*
+   given a `<preserveFixedJoint>` — preserving a fixed joint whose child is
+   effectively massless makes sdformat delete the link outright.
 5. **Maintainer email and licence** in `package.xml` are placeholders. The
    vendored arm assets are Apache-2.0 from TheRobotStudio.
 6. **No battery** is modelled in the CAD, so none is described.
@@ -355,18 +395,71 @@ Marked `TODO` in the source, listed here so none of them hide.
    `tools/upstream/` and switching is a one-line change to `SRC` in
    `tools/gen_arm_xacro.py` plus a re-run.
 
+Added in Phase 2:
+
+8. **Friction coefficients are modelling choices, not measurements.**
+   `roller_mu = 0.05`, `rolling_mu = 1.0` in `gazebo.xacro`. Nothing in the
+   STEP or any datasheet gives a friction coefficient. Tune against the real
+   robot.
+9. **`max_wheel_speed` defaults to 0.0, meaning unlimited.** No motor datasheet
+   was supplied, so any limit would be invented. When you know the real figure,
+   set it as a ROS parameter on `kiwi_drive_node`; the node then scales the
+   whole twist uniformly rather than clamping wheels individually, which would
+   silently change the direction of travel.
+10. **`gz:expressed_in` on `fdir1` is traced through source but never run** —
+    the attribute-preserving code path was read in `parser_urdf.cc` and the
+    frame semantics in DART's `ContactSurface.cpp`, but no Gazebo executed
+    here. See
+    [Omniwheel friction](#omniwheel-friction--the-part-most-likely-to-need-tuning)
+    for the one-line `gz sdf -p` check and the exact fallback.
+11. **No hardware interface for the real robot.** `sim:=false` intentionally
+    names a plugin that does not exist so it fails loudly.
+
 ---
 
 ## Corrections to the brief
 
 The brief asked to be told when a supplied number disagreed with the STEP.
-Three did.
+Four did.
 
 | Brief said | STEP says | Resolution |
 |---|---|---|
+| wheel mounting angles **30° / 150° / 270°** | **60.004° / 180.004° / 300.005°** — a uniform **30° offset** | the STEP's angles are used. See below; this one matters most |
 | omniwheel "60 mm — confirm RADIUS or DIAMETER" | max radius **30.000 mm** on all three; part is named `RodaOmni 60 mm` | 60 mm is a **diameter**; radius 0.030 m |
 | base plate "200 mm — round or square?" | **round**, Ø **240.002 mm** (roundness ratio 1.0001; a square would give 1.414) | plate radius 0.120 m — the 200 mm figure is wrong |
 | wheel axle height 27 mm | axle sits **30.000 mm** above the wheel-circle tangent, exactly the wheel radius | 27 mm is wrong; 30 mm is used, and the xacro derives it so it cannot disagree with the radius |
+
+### The 30° wheel-angle discrepancy — read this before driving
+
+This is the one correction that can silently ruin the drive, because a 30°
+error in the wheel angles produces motion that still *looks* holonomic: the
+robot drives smoothly, just not in the commanded direction, and yaw bleeds into
+translation.
+
+The three omniwheel instances measure, straight out of the GLB:
+
+| Instance | CAD bearing | radius | robot-frame bearing |
+|---|---|---|---|
+| `RodaOmni 60 mm v1:1` | 330.004° | 135.501 mm | **60.004°** |
+| `RodaOmni 60 mm v1:3` | 90.004° | 135.499 mm | **180.004°** |
+| `RodaOmni 60 mm v1:2` | 210.005° | 135.503 mm | **300.005°** |
+
+Uniformly 30° away from the brief's 30/150/270, so it is a reference-frame
+disagreement, not a modelling slip. Forward is pinned independently: the
+`RPLIDAR C1 v1:1` instance sits at CAD bearing **270.000°**, i.e. exactly along
+CAD −Y, and the arm and camera face the same way. Taking that as robot +X, the
+wheels land at 60/180/300 — one wheel dead astern, two ahead at ±60°, the usual
+kiwi layout. The brief's angles would instead put a wheel dead abeam to
+starboard, which no instance in the STEP does.
+
+The shared +0.004° is the residual in the origin estimate, not a real asymmetry.
+
+**If your ESP32 firmware assumes 30/150/270**, then it and this description
+disagree by 30° and one of them is wrong about the physical robot. Change
+whichever is wrong — the `wheel_*_angle_deg` properties in `base.xacro`, or the
+firmware — but **not both**, and re-run `tools/kiwi_check.py` afterwards. The
+drive node takes the angles as a ROS parameter precisely so this can be
+corrected without editing code.
 
 Also worth recording: **the STEP carries no joint or mate data** — all 556
 placements are rigid. So the brief's concern about extraction inventing a
@@ -384,12 +477,17 @@ remain the authority.
 
 ### Checked here
 
-Run `python tools/xacro_lite.py urdf/mmr_bot.urdf.xacro -o build/robot.urdf`
-then `python tools/check_urdf_lite.py build/robot.urdf`. Current result —
-**0 failures, 2 expected warnings**:
+```bash
+python tools/xacro_lite.py urdf/mmr_bot.urdf.xacro -o build/robot.urdf
+python tools/check_urdf_lite.py build/robot.urdf          # 0 failures, 2 warnings
+python tools/check_phase2.py build/robot.urdf config/controllers.yaml   # 0 failures
+python -m pytest test/ -q                                 # 16 passed
+```
 
-- All five xacro files are well-formed XML and expand cleanly (27 properties,
-  7 macros, 4 includes).
+**Description** (`check_urdf_lite.py`) — 0 failures, 2 expected warnings:
+
+- All seven xacro files are well-formed XML and expand cleanly (32 properties,
+  12 macros, 6 includes).
 - One root link, no orphans, no cycles, joints = links − 1.
 - No duplicate link or joint names.
 - **Exactly 9 movable joints**, names and types exactly as specified; every
@@ -402,8 +500,27 @@ then `python tools/check_urdf_lite.py build/robot.urdf`. Current result —
 - Arm xacro matches upstream on links, joint names, types, limits and origins.
 - Kiwi sign convention verified against the URDF (`tools/kiwi_check.py`).
 
-The two warnings are the documented gaps: `arm_gripper_frame_link`'s zero
-inertia, and the six links with no inertial pending your Fusion numbers.
+The two warnings are documented gaps: `arm_gripper_frame_link`'s zero inertia
+(upstream's, and it gets lumped away in Gazebo anyway) and `base_footprint`
+having no inertial (correct — sdformat allocates one).
+
+**Control wiring** (`check_phase2.py`) — 0 failures, 0 warnings:
+
+- The hardware plugin is `gz_ros2_control/GazeboSimSystem`, and all 9 movable
+  joints are claimed by `<ros2_control>` — no more, no fewer.
+- All three controller type strings match the upstream pluginlib exports.
+- Every joint each controller claims exposes the command interface it needs.
+- **Wheel index → URDF mounting bearing agrees with `kiwi_kinematics.py`** for
+  all three wheels (60 / 180 / 300°), as do `base_radius` and `wheel_radius`.
+- Every `<gazebo reference=…>` names a link that exists.
+- `fdir1` carries a *literal* `gz:expressed_in` prefix. This one is checked
+  against raw bytes rather than a parsed tree on purpose: sdformat parses with
+  TinyXML2, which does no namespace resolution, so an XML library that
+  helpfully rewrites the prefix to `ns0:` would break the friction silently.
+  (My own `xacro_lite.py` did exactly that until it was fixed.)
+
+`gazebo:=false` was confirmed to emit **zero** `<gazebo>` and `<ros2_control>`
+tags, and both variants expand to 14 links / 13 joints / **9 movable**.
 
 ### NOT checked here — please run these
 
@@ -411,7 +528,12 @@ inertia, and the six links with no inertial pending your Fusion numbers.
 xacro urdf/mmr_bot.urdf.xacro > /tmp/robot.urdf          # must run clean
 check_urdf /tmp/robot.urdf                               # 1 tree, no orphans, 9 movable
 ros2 launch mmr_pkg display.launch.py                    # 0 missing-mesh warnings, 0 TF errors
-ros2 run tf2_tools view_frames                           # connected tree
+colcon test --packages-select mmr_pkg                    # 16 pytest cases
+
+gz sdf -p /tmp/robot.urdf | grep -A2 fdir1               # does gz:expressed_in survive?
+ros2 launch mmr_pkg gazebo.launch.py
+ros2 control list_controllers                            # 3 controllers, all `active`
+ros2 topic echo /scan --once                             # frame_id must be `laser_frame`
 ```
 
 Then, by eye in RViz:
@@ -421,16 +543,182 @@ Then, by eye in RViz:
   correct axis;
 - the part colours came through on `base_link`.
 
+And in Gazebo — these are the Phase 2 claims I could not test:
+
+- **Strafing.** `{linear: {y: 0.2}}` should track cleanly sideways. If it
+  stalls or veers, the friction `fdir1` did not survive conversion.
+- **Direction.** `{linear: {x: 0.2}}` should drive toward the lidar. If the
+  robot moves the wrong way, the sign convention or the wheel order is
+  inverted — check `tools/check_phase2.py` output first.
+- **The lidar returns data at all.** Silence usually means the world is missing
+  the Sensors system plugin or its `<render_engine>`.
+
 `xacro_lite.py` implements only the subset of xacro this package uses. If real
 `xacro` disagrees with it, real `xacro` is right — tell me and I will fix the
 description.
 
 ---
 
-## Phase 2 — not started
+## Phase 2 — simulation and control
 
-Gazebo Harmonic, `ros2_control`, the `kiwi_drive_node` and the lidar bridge all
-wait for your confirmation that the above looks right in RViz.
+### What talks to what
+
+```
+/cmd_vel ──▶ kiwi_drive_node ──▶ /wheel_velocity_controller/commands
+                                          │  Float64MultiArray, 3 entries
+                                          ▼
+                        ros2_control  (gz_ros2_control/GazeboSimSystem)
+                                          │
+                                          ▼
+                     wheel_0/1/2_joint velocity interfaces ──▶ physics
+
+joint_state_broadcaster ──▶ /joint_states ──▶ robot_state_publisher ──▶ /tf
+gpu_lidar ──▶ gz topic /scan ──▶ ros_gz_bridge ──▶ /scan (sensor_msgs/LaserScan)
+```
+
+### The IK, and how to diff it against your firmware
+
+The brief asked for the kinematics in one clearly commented function so it can
+be compared against the ESP32. It is `inverse_kinematics()` in
+**`mmr_pkg/kiwi_kinematics.py`** — a plain Python module with **no ROS imports
+at all**, so you can run it standalone:
+
+```bash
+python -c "
+from mmr_pkg.kiwi_kinematics import KiwiKinematics
+k = KiwiKinematics()
+print(k.inverse_kinematics(0.2, 0.0, 0.0))   # forward 0.2 m/s
+"
+```
+
+The whole of it:
+
+```python
+w_i = (vx·sin(α_i) − vy·cos(α_i) − L·ωz) / R
+```
+
+with `α = (60°, 180°, 300°)`, `L = 0.135500 m`, `R = 0.030 m`. `kiwi_drive_node.py`
+is a *ROS wrapper only* and contains no kinematics — that separation is
+deliberate, so the file you diff is small.
+
+**If your firmware disagrees, check the sign convention first**, not the
+algebra. See [Wheel sign convention](#wheel-sign-convention) — and note the
+[30° wheel-angle discrepancy](#the-30-wheel-angle-discrepancy--read-this-before-driving)
+between the brief and the STEP, which is the single most likely source of a
+mismatch.
+
+`test/test_kiwi_kinematics.py` has 16 tests (round-trip to 1e-12, closed form vs
+pseudo-inverse, per-wheel direction, and a test that re-reads the expanded URDF
+so the module and `base.xacro` cannot drift apart). They need no ROS:
+
+```bash
+python -m pytest test/ -q      # 16 passed
+```
+
+### Omniwheel friction — the part most likely to need tuning
+
+A cylinder collision grips in every direction, which would weld a kiwi drive to
+the floor. Real omniwheels slide freely along their own axle, so `gazebo.xacro`
+sets anisotropic friction: `mu` along `fdir1` (the axle, slips), `mu2`
+perpendicular (rolling, grips).
+
+`fdir1` is `(1,0,0)` in `wheel_N_link`. That is safe because the wheel spins
+about its own local **+X**, and a rotation about X leaves X invariant — so the
+direction is constant in world terms as the wheel turns. (Mecanum wheels, with
+rollers at 45°, do not have this property and genuinely need chassis-frame
+`fdir1`; that is why the official Gazebo mecanum example looks more complicated.)
+
+Two caveats:
+
+1. **`mu = 0.05` and `mu2 = 1.0` are modelling choices, not measurements.**
+   Nothing in the STEP or any datasheet gives a friction coefficient. They are
+   the first knobs to reach for if the sim drives differently from the hardware.
+2. **The friction block is written the un-obvious way on purpose.** sdformat
+   accepts friction from a URDF two ways, and they are not equivalent:
+
+   | Form | Attributes on `<fdir1>` |
+   |---|---|
+   | flat — `<gazebo reference=…><mu1/><mu2/><fdir1/>` | **silently dropped** |
+   | blob — `<gazebo reference=…><collision><surface>…` | preserved |
+
+   The flat form is what most examples use, and it reads `<fdir1>` through a
+   text-only helper that then re-emits a fresh element, so `gz:expressed_in`
+   would vanish without a word. This package uses the nested blob form, which
+   sdformat grafts in via a deep clone that copies attributes. (Inside the
+   blob the tag is SDF's `<mu>`, *not* `<mu1>` — that spelling belongs only to
+   the flat form.)
+
+   I still could not run Gazebo, so check it once:
+   ```bash
+   xacro urdf/mmr_bot.urdf.xacro > /tmp/r.urdf && gz sdf -p /tmp/r.urdf | grep -A2 fdir1
+   ```
+   If the attribute *has* been dropped, the fix is **not** to leave `1 0 0`
+   bare. DART resolves a bare `fdir1` in the **collision** frame, which here
+   carries `rpy="0 π/2 0"`, so the fallback is `<fdir1>0 0 1</fdir1>` —
+   collision-local Z, which that rotation maps onto the link's +X axle.
+   **Failure signature:** driving forwards and rotating look fine, but
+   strafing is sluggish, veers, or stalls.
+
+### Fixed joints do not survive URDF → SDF conversion
+
+This surprises people, so it is worth stating plainly. sdformat 14 lumps
+fixed-joint children **into their parent**, and our root is `base_footprint`, so
+the model Gazebo actually simulates has one chassis body named `base_footprint`
+— `base_link` and `laser_frame` are *absorbed into it*. `gz topic -l` showing no
+`base_link` is correct, not a bug.
+
+This is harmless here, and deliberately left alone:
+
+- TF is unaffected — `robot_state_publisher` builds `/tf` from the URDF, not
+  from Gazebo's SDF.
+- The lidar `<sensor>` is pose-compensated as it is moved, so it stays in the
+  right place, and `<gz_frame_id>laser_frame</gz_frame_id>` makes the published
+  `LaserScan` carry a `frame_id` that matches TF.
+- `base_footprint` having no `<inertial>` is fine; sdformat allocates one and
+  accumulates the lumped masses.
+
+**Do not "fix" this with `<disableFixedJointLumping>`.** That tag does not
+preserve a fixed joint — it converts it to a *revolute* joint with (0,0) limits,
+which would take this robot from the specified 9 movable joints to 13. If you
+ever do need a frame kept, the correct tag is `<preserveFixedJoint>`, and its
+`reference` is the **joint** name, not the child link.
+
+### Controllers
+
+| Controller | Type | Joints |
+|---|---|---|
+| `joint_state_broadcaster` | `joint_state_broadcaster/JointStateBroadcaster` | all |
+| `wheel_velocity_controller` | `velocity_controllers/JointGroupVelocityController` | `wheel_0/1/2_joint` |
+| `arm_position_controller` | `position_controllers/JointGroupPositionController` | the 6 SO-101 joints |
+
+Every one of those plugin strings was read from the pluginlib export XML on the
+`jazzy` branch of `ros2_controllers`, not written from memory.
+
+**Joint order is load-bearing.** `Float64MultiArray` carries no names, so the
+`joints:` order in `config/controllers.yaml` is the only thing binding a number
+to a wheel. It must match `wheel_angles_deg` in `kiwi_drive_node`. Reorder one
+without the other and the robot drives off at the wrong heading with no error
+anywhere. `tools/check_phase2.py` exists specifically to catch this — it
+cross-checks the YAML, the `<ros2_control>` block, the URDF joint origins and
+`kiwi_kinematics.py` against each other.
+
+Arm limits are **not** repeated in `controllers.yaml`. They live on the
+`<limit>` tags in `arm.xacro`, carried verbatim from upstream, and ros2_control
+reads them from the URDF. One source of truth.
+
+### The arm is position-controlled, the wheels velocity-controlled
+
+A LeRobot policy emits joint positions, so `position` is the interface that
+matches the trained action space, and the joint names stay **unprefixed**
+(`shoulder_pan`, not `arm_shoulder_pan`) exactly as in Phase 1. Do not tidy
+those.
+
+### Still no hardware interface
+
+`ros2_control.xacro` takes a `sim` parameter, but only `sim:=true` resolves to a
+real plugin. There is no ESP32 `hardware_interface` in this package. Expanding
+with `sim:=false` deliberately emits a plugin name that does not exist, so
+ros2_control fails loudly at load rather than silently driving nothing.
 
 ---
 
@@ -441,10 +729,21 @@ mmr_pkg/
 ├── package.xml, CMakeLists.txt
 ├── urdf/       mmr_bot.urdf.xacro, base.xacro, sensors.xacro, arm.xacro,
 │               inertial_macros.xacro
+│               ros2_control.xacro, gazebo.xacro        ← Phase 2
 ├── meshes/     visual/ (+ .mtl), collision/, arm/, collision/arm/
-├── launch/     display.launch.py
+├── config/     controllers.yaml                        ← Phase 2
+├── worlds/     mmr_world.sdf                           ← Phase 2
+├── launch/     display.launch.py, gazebo.launch.py
 ├── rviz/       display.rviz
+├── mmr_pkg/    kiwi_kinematics.py   ← THE FILE TO DIFF AGAINST YOUR FIRMWARE
+│               kiwi_drive_node.py   ← ROS wrapper, no kinematics in it
+├── scripts/    kiwi_drive_node      ← `ros2 run` entry point
+├── test/       test_kiwi_kinematics.py                 ← 16 cases, no ROS needed
 └── tools/      STEP parsing, measurement and mesh extraction scripts, plus the
-                offline xacro/URDF checkers. Not installed by CMake — these are
-                provenance for every number above, not runtime code.
+                offline xacro/URDF/control checkers. Not installed by CMake —
+                these are provenance for every number above, not runtime code.
 ```
+
+Note `mmr_pkg/` (the Python module) and `urdf/` are siblings. The package is
+`ament_cmake` because it is description-first; `ament_cmake_python` bolts the
+one Python library onto it rather than splitting into two packages.

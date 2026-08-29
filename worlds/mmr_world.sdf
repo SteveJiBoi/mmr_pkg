@@ -1,0 +1,104 @@
+<?xml version="1.0" ?>
+<!-- ======================================================================
+     Minimal test world for mmr_bot.
+
+     Deliberately almost empty: a floor, a light, and the four system
+     plugins. The point is to have somewhere to check that the kiwi drive
+     resolves holonomic motion and that the lidar returns data, not to be a
+     realistic environment. Add obstacles once the drive is trusted.
+
+         ros2 launch mmr_pkg gazebo.launch.py
+
+     Every <plugin filename=.../name=...> pair below was copied from
+     gz-sim8's own examples/worlds/gpu_lidar_sensor.sdf, which is the
+     branch that pairs with Harmonic. They are easy to get subtly wrong
+     from memory and the failure mode is a silent no-op.
+     ====================================================================== -->
+<sdf version="1.10">
+  <world name="mmr_world">
+
+    <!-- Physics. 1 ms step = 1000 Hz, which is the rate that
+         controller_manager's update_rate (100 Hz, config/controllers.yaml)
+         must divide evenly into. If you change max_step_size, re-check that
+         relationship or the controllers will run at a jittery effective
+         rate. DART is Harmonic's default engine and honours the
+         <mu>/<mu2>/<fdir1> anisotropic friction the omniwheels rely on. -->
+    <physics name="1ms" type="dart">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system"
+            name="gz::sim::systems::Physics"/>
+
+    <!-- REQUIRED for the lidar to produce any data at all. Without the
+         Sensors system (and a render engine for it), the gpu_lidar loads
+         without complaint and publishes nothing - which looks exactly like
+         a bridge or topic-name problem and wastes an afternoon. -->
+    <plugin filename="gz-sim-sensors-system"
+            name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <!-- Streams world state to the GUI. Without it the GUI is blank. -->
+    <plugin filename="gz-sim-scene-broadcaster-system"
+            name="gz::sim::systems::SceneBroadcaster"/>
+
+    <!-- Handles entity spawn/remove requests. `ros2 run ros_gz_sim create`
+         (used by gazebo.launch.py) goes through this; without it the robot
+         never appears. -->
+    <plugin filename="gz-sim-user-commands-system"
+            name="gz::sim::systems::UserCommands"/>
+
+    <gravity>0 0 -9.8</gravity>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <!-- Flat infinite floor. Friction is left at the engine default and is
+         intentionally isotropic: all the anisotropy that makes a kiwi drive
+         work lives on the WHEELS (urdf/gazebo.xacro), which is the physically
+         honest place for it - the rollers are part of the wheel, not the
+         floor. Gazebo combines the two surfaces, so if you want a slippery
+         floor to test traction loss, change it here rather than detuning the
+         wheels. -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+            <specular>0.8 0.8 0.8 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>

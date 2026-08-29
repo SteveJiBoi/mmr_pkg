@@ -19,7 +19,26 @@
 <!--                                                                        -->
 <!-- 14 links, 13 joints, of which 9 are movable (3 wheels + 6 arm).         -->
 <!-- ====================================================================== -->
-<robot name="mmr_bot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+<!-- xmlns:gz is required by the omniwheel friction block in gazebo.xacro,
+     which uses gz:expressed_in on <fdir1> to pin the roller axis to the
+     chassis frame instead of the (spinning) wheel frame. Declared here at the
+     root because that is the only place a namespace declaration survives
+     xacro expansion into the final URDF. -->
+<robot name="mmr_bot"
+       xmlns:xacro="http://www.ros.org/wiki/xacro"
+       xmlns:gz="http://gazebosim.org/schema">
+
+  <!-- ==================================================================== -->
+  <!-- Phase 2 toggles.                                                     -->
+  <!--                                                                      -->
+  <!--   ros2 run xacro xacro mmr_bot.urdf.xacro                (sim, full)  -->
+  <!--   ros2 run xacro xacro mmr_bot.urdf.xacro gazebo:=false  (Phase 1)    -->
+  <!--                                                                      -->
+  <!-- gazebo:=false reproduces the Phase 1 description byte-for-byte apart  -->
+  <!-- from the xmlns:gz attribute, so display.launch.py and anything that   -->
+  <!-- only wants geometry are unaffected by Phase 2.                        -->
+  <!-- ==================================================================== -->
+  <xacro:arg name="gazebo" default="true"/>
 
   <xacro:include filename="$(find mmr_pkg)/urdf/inertial_macros.xacro"/>
   <xacro:include filename="$(find mmr_pkg)/urdf/base.xacro"/>
@@ -46,5 +65,23 @@
   <xacro:so101_arm prefix="arm_" parent="base_link">
     <origin xyz="${arm_mount_x} ${arm_mount_y} ${arm_mount_z}" rpy="0 0 0"/>
   </xacro:so101_arm>
+
+  <!-- ================================================================== -->
+  <!-- Phase 2: simulation.                                                -->
+  <!--                                                                     -->
+  <!-- Both files are included INSIDE the gazebo guard. ros2_control.xacro  -->
+  <!-- is guarded too, not just gazebo.xacro, because its only hardware     -->
+  <!-- plugin today is the Gazebo one - there is no ESP32                   -->
+  <!-- hardware_interface yet (see the TODO in that file). When one is      -->
+  <!-- written this include moves out of the guard and the `sim` parameter  -->
+  <!-- of mmr_ros2_control starts earning its keep.                         -->
+  <!-- ================================================================== -->
+  <xacro:if value="$(arg gazebo)">
+    <xacro:include filename="$(find mmr_pkg)/urdf/ros2_control.xacro"/>
+    <xacro:include filename="$(find mmr_pkg)/urdf/gazebo.xacro"/>
+
+    <xacro:mmr_ros2_control sim="true"/>
+    <xacro:mmr_gazebo/>
+  </xacro:if>
 
 </robot>

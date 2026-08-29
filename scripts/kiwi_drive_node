@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+"""Console entry point so `ros2 run mmr_pkg kiwi_drive_node` works.
+
+The package is ament_cmake (it is mostly meshes and xacro), so there is no
+setup.py console_scripts to generate this. CMakeLists installs this file into
+lib/mmr_pkg and ament_python_install_package installs the module it imports.
+"""
+from mmr_pkg.kiwi_drive_node import main
+
+if __name__ == "__main__":
+    main()
