@@ -27,6 +27,7 @@
 </table>
 
 
+|  |  |
 |---|---|
 | **Base** | Kiwi drive — 3 omniwheels at 60° / 180° / 300°, Ø 60 mm, on a Ø 240 mm plate |
 | **Arm** | SO-101, 6 movable joints, vendored from [TheRobotStudio](https://github.com/TheRobotStudio/SO-ARM100) |
