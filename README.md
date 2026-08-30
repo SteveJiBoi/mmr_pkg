@@ -15,9 +15,16 @@
   </sub>
 </p>
 
-> **📷 `docs/images/robot-hero.jpg`** — *the assembled robot, three-quarter view.
-> Drop the file in and replace this line with*
-> `![mmr_bot](docs/images/robot-hero.jpg)`
+<table align="center">
+<tr>
+  <td align="center"><img src="docs/images/robot-real.jpg" alt="The assembled robot" width="270"></td>
+  <td align="center"><img src="docs/images/cad-iso.png" alt="Isometric CAD render" width="415"></td>
+</tr>
+<tr>
+  <td align="center"><sub>As built — SO-101 arm, RPLIDAR C1, one omniwheel in view</sub></td>
+  <td align="center"><sub>The CAD model every dimension below is measured from</sub></td>
+</tr>
+</table>
 
 |  |  |
 |---|---|
@@ -37,20 +44,6 @@
 > What *was* run is a set of offline reimplementations, and they are listed
 > honestly in [What is and isn't verified](#what-is-and-isnt-verified). Claims
 > that need hardware are marked individually rather than glossed over.
-
----
-
-## Gallery
-
-|  |  |
-|:--:|:--:|
-| **📷 `docs/images/cad-iso.png`**<br><sub>Isometric CAD render</sub> | **📷 `docs/images/robot-real.jpg`**<br><sub>The robot as built</sub> |
-| **📷 `docs/images/rviz-teleop.png`**<br><sub>RViz — model, `/scan` and camera</sub> | **📷 `docs/images/gazebo.png`**<br><sub>Gazebo Harmonic</sub> |
-
-<sub>Drop the files into `docs/images/` and swap each cell for
-`![caption](docs/images/&lt;file&gt;)`. See
-<a href="docs/images/README.md"><code>docs/images/README.md</code></a> for what
-each shot should show and why <code>wiring.jpg</code> is the most useful one.</sub>
 
 ---
 
@@ -125,9 +118,6 @@ This works with **no firmware change**. The ESP32 sketch already accepts a polar
 command over UDP and does its own wheel mixing, so `mmr_pkg/esp32_protocol.py`
 reproduces what `esp32/controller.py` already sends — byte for byte, which
 `test/test_esp32_bridge.py` enforces.
-
-> **📷 `docs/images/rviz-teleop.png`** — *RViz while driving: robot model, live
-> `/scan`, and the camera feed.*
 
 ### The key map
 
@@ -448,9 +438,6 @@ Until then, **there is no odometry**, and the RViz fixed frame is
 
 ## The robot
 
-> **📷 `docs/images/cad-top.png`** — *top-down render showing the three wheels.
-> Worth adding: the wheel angles are the thing people get wrong.*
-
 ### Frame tree
 
 ```
@@ -626,10 +613,6 @@ and right are mirrored and the firmware is the thing that is wrong.
 None of this blocks teleop — the bridge reproduces `controller.py` verbatim, so
 the robot drives today exactly as it already does. It matters the moment you
 compare simulation against hardware, or move to Option B.
-
-> **📷 `docs/images/wiring.jpg`** — *the ESP32 and motor wiring, close enough to
-> trace which driver output feeds which wheel. This is the missing evidence that
-> would settle the finding above; it is not in any source file.*
 
 ---
 
@@ -1460,6 +1443,8 @@ mmr_pkg/
 │               test_esp32_bridge.py       22 cases │ 119 total,
 │               test_bridge_core.py        45 cases │ none need ROS
 │               test_teleop_keys.py        36 cases ┘
+├── docs/       images/  the two pictures at the top of this file. Documentation
+│               only — not installed by CMake, not used at runtime
 └── tools/      STEP parsing, measurement and mesh extraction scripts, plus the
                 offline xacro/URDF/control checkers, firmware_diff.py and
                 check_repo.py. Not installed by CMake — these are provenance for
