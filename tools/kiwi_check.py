@@ -2,7 +2,7 @@
 
 Phase 1 only claims a CONVENTION; the drive node itself is Phase 2. But the
 convention has to be stated correctly in the README, so it is derived here from
-the joint origins and axes that are really in build/robot.urdf, rather than
+the joint origins and axes that are really in generated/robot.urdf, rather than
 asserted from memory.
 
 Convention under test
@@ -25,7 +25,7 @@ import xml.etree.ElementTree as ET
 
 import numpy as np
 
-URDF = "build/robot.urdf"
+URDF = "generated/robot.urdf"
 R = 0.030
 L = 0.135500
 

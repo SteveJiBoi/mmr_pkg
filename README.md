@@ -59,13 +59,27 @@ Arguments: `headless:=true`, `rviz:=true`, `world:=`, `spawn_z:=`.
 **Phase 3 — the real robot:**
 
 ```bash
-ros2 launch mmr_pkg robot.launch.py            # on the Pi
-ros2 launch mmr_pkg teleop.launch.py           # on the PC
-ros2 run teleop_twist_keyboard teleop_twist_keyboard   # PC, own terminal
+ros2 launch mmr_pkg robot.launch.py esp32_ip:=10.229.5.249   # on the Pi
+ros2 launch mmr_pkg teleop.launch.py                          # on the PC
+ros2 run mmr_pkg kb_teleop                            # PC, own terminal, needs focus
 ```
 
 Arguments: `esp32_ip:=`, `lidar:=false`, `camera:=false`, `bridge:=false`,
-`serial_port:=`, `video_device:=`.
+`serial_port:=`, `video_device:=`, `pixel_format:=`, `image_width:=`,
+`image_height:=`, `camera_info_url:=`, `bridge_params:=`.
+
+Each of the three drivers can be disabled independently, and **one failing does
+not take the others down**: no node in `robot.launch.py` has an `on_exit`
+handler, so an unplugged camera stops the camera and leaves the lidar and the
+drive bridge running. That is the intended behaviour, and it is worth stating
+because adding a single `Shutdown` handler would quietly undo it.
+
+Before running static checks or tests, no build and no ROS is needed:
+
+```bash
+python tools/check_repo.py     # 0 failures over 70 checks
+python -m pytest test/ -q      # 119 passed
+```
 
 The description also builds without any simulation tags, which is what
 `display.launch.py` uses:
@@ -394,7 +408,7 @@ Marked `TODO` in the source, listed here so none of them hide.
    U20CAM-1080P on a `BaseCamMount`, facing forward. It is currently merged into
    the `base_link` visual, with its hull in `camera_pod.stl`. Say the word and it
    can be split into a proper `camera_link` + optical frame — the mount transform
-   is measurable from the same STEP. See TODO 12: you do **not** need this to see
+   is measurable from the same STEP. See TODO 14: you do **not** need this to see
    the video feed in RViz.
 4. **`arm_gripper_frame_link` has a zero inertia tensor** (mass 1e-9). That is
    upstream's dummy frame, kept verbatim. Harmless for RViz, and harmless in
@@ -454,6 +468,21 @@ Added in Phase 2:
     rejects the frame outright. Splitting out a `camera_link` is easy; getting
     a real calibration means running `camera_calibration` with a checkerboard.
     Ask if you want either.
+15. **Acceleration limits default to 0.0 — unlimited — because there is no
+    measured figure.** The robot has no encoders, so its real acceleration
+    capability is unknown, and any non-zero default would be a number I made
+    up. The limiter itself is implemented and tested; it is switched off
+    pending a measurement. If the base lurches on a step input, raise
+    `max_linear_accel` in `config/esp32_bridge.yaml` until it does not, and
+    record what you used. Note that the *braking* limits are intended to stay
+    at 0.0 even after that: a slow ramp down is a robot that will not stop
+    when told.
+16. **`key_timeout` (0.6 s) is inferred from typical terminal behaviour, not
+    measured on your machine.** A terminal reports no key-up event, so release
+    is detected by auto-repeat ceasing, and the timeout must exceed the initial
+    repeat delay — commonly ~0.5 s, but configurable per system. Wrong in one
+    direction the robot coasts after you let go; wrong in the other it stutters
+    while you hold. Tune it on the robot; the value is a ROS parameter.
 
 ---
 
@@ -518,11 +547,13 @@ remain the authority.
 ### Checked here
 
 ```bash
-python tools/xacro_lite.py urdf/mmr_bot.urdf.xacro -o build/robot.urdf
-python tools/check_urdf_lite.py build/robot.urdf          # 0 failures, 2 warnings
-python tools/check_phase2.py build/robot.urdf config/controllers.yaml   # 0 failures
+python tools/xacro_lite.py urdf/mmr_bot.urdf.xacro -o generated/robot.urdf
+python tools/check_urdf_lite.py generated/robot.urdf          # 0 failures, 2 warnings
+python tools/check_phase2.py generated/robot.urdf config/controllers.yaml   # 0 failures
+python tools/check_repo.py                        # 0 failures over 70 checks
+python tools/kiwi_check.py                                        # exit 0
 python tools/firmware_diff.py               # exit 1: reports a real disagreement
-python -m pytest test/ -q                                 # 38 passed
+python -m pytest test/ -q                                    # 119 passed
 ```
 
 **Description** (`check_urdf_lite.py`) — 0 failures, 2 expected warnings:
@@ -576,6 +607,40 @@ tags, and both variants expand to 14 links / 13 joints / **9 movable**.
 - `strafe_sign` / `yaw_sign` flip only what they claim to.
 - `prevent_clipping` preserves the translation:rotation ratio.
 
+**Bridge policy** (`test_bridge_core.py`) — 45 cases, no ROS needed:
+
+- Command timeout: a stale `/cmd_vel` yields zero, and a **backwards clock step**
+  reads as stale rather than fresh. That is not paranoia — a Pi with no RTC
+  steps its clock when NTP first syncs, and "elapsed time is negative" must not
+  be mistaken for "the command just arrived".
+- Velocity limiting scales the magnitude, so the commanded heading survives.
+- Acceleration limiting ramps the linear vector; `dt <= 0` or no configured
+  limit jumps straight to the target rather than stalling.
+- A stale command stops **hard**, ignoring the deceleration limit. There is a
+  test named for the trap, because `shaper.step(*watchdog.command(now), dt)`
+  reads like a stop but actually ramps down — `resolve()` is the one supported
+  way to combine the two.
+- Link state: never-seen decays to down, so a wrong `esp32_ip` is reported
+  rather than sitting silently in "never seen" forever.
+- Endpoint resolution rejects an empty IP and an out-of-range port, and treats
+  any digits-and-dots string as a literal address that is **never** handed to a
+  resolver — deterministic across machines, and no DNS timeout at startup.
+
+**Keyboard** (`test_teleop_keys.py`) — 36 cases, no ROS, no terminal, no clock:
+
+- Each of the six keys maps to its own axis in REP-103 body frame; `s` is bound
+  to nothing; uppercase behaves as lowercase; unknown keys are ignored rather
+  than treated as stop; keys combine into diagonals and cancel when opposed.
+- Release-by-timeout, per-key and independent, including the backwards-clock case.
+- SPACE clears the held set, so a key still repeating cannot restart the robot.
+- Speed steps clamp to a ceiling and to a `MIN_SPEED` floor, below which the
+  robot could not overcome its own stiction and teleop would just look broken.
+- The binding table is checked for coherence: no key with two jobs, every
+  binding a unit vector on one axis, all six directions present.
+
+`TeleopState` takes time as an argument, which is why a held key, a released key
+and a clock that steps backwards are all just numbers in these tests.
+
 **Firmware cross-check** (`firmware_diff.py`) — reads the `.ino` directly, so it
 cannot drift from the sketch. It **reports a genuine disagreement**; see
 [the finding](#-the-firmware-and-the-simulation-disagree-about-which-way-is-left).
@@ -589,7 +654,8 @@ rather than silently invalidating every table above.
 xacro urdf/mmr_bot.urdf.xacro > /tmp/robot.urdf          # must run clean
 check_urdf /tmp/robot.urdf                               # 1 tree, no orphans, 9 movable
 ros2 launch mmr_pkg display.launch.py                    # 0 missing-mesh warnings, 0 TF errors
-colcon test --packages-select mmr_pkg                    # 38 pytest cases
+colcon build --packages-select mmr_pkg                   # never run here
+colcon test  --packages-select mmr_pkg                   # 119 pytest cases
 
 gz sdf -p /tmp/robot.urdf | grep -A2 fdir1               # does gz:expressed_in survive?
 ros2 launch mmr_pkg gazebo.launch.py
@@ -602,10 +668,20 @@ no ESP32 on this machine**:
 
 ```bash
 ros2 multicast send / receive          # PC <-> Pi discovery, before anything else
-ros2 launch mmr_pkg robot.launch.py
+ros2 pkg list | grep mmr_pkg           # package is found after sourcing
+ros2 pkg executables mmr_pkg           # must list esp32_bridge, kb_teleop, kiwi_drive_node
+ros2 launch mmr_pkg robot.launch.py esp32_ip:=10.229.5.249
+ros2 run mmr_pkg kb_teleop             # own terminal, must keep focus
+ros2 topic hz /cmd_vel                 # ~25 Hz while a key is held
 ros2 topic hz /scan /image_raw         # ~10 Hz and ~30 Hz
-ros2 topic echo /esp32_bridge/esp32_reply    # should stream "ACK ..." while driving
+ros2 topic echo /diagnostics           # link state, reply ratio, cmd_vel age
 ```
+
+**The `install(PROGRAMS …)` line and the executable list are the ones to check
+first.** `ros2 pkg executables` is what caught the original packaging bug, and
+`kb_teleop` is newly added to that install line — `check_repo.py` verifies every
+file in `scripts/` appears in `CMakeLists.txt` and that each shim imports a
+module that exists, but only `colcon build` proves it installs.
 
 Then, by eye in RViz:
 
@@ -628,9 +704,13 @@ And on the real robot — the Phase 3 claims I could not test:
 
 - **That it drives at all.** The bridge reproduces `controller.py` byte for
   byte in unit tests, but no packet has ever left this machine.
-- **Which way it strafes.** Press `J`; if the robot goes right instead of left,
-  set `strafe_sign:=-1`. This is expected to be a coin flip until the wheel
+- **Which way it strafes.** Press `a`; if the robot goes right instead of left,
+  set `strafe_sign: -1`. This is expected to be a coin flip until the wheel
   wiring in TODO 12 is settled.
+- **That the keyboard's release timing feels right.** `key_timeout` is 0.6 s
+  because a terminal's initial auto-repeat delay is typically ~0.5 s, but that
+  delay is configurable per system. If the robot keeps moving too long after you
+  lift a key, lower it; if it stutters while you hold one, raise it.
 - **That the scan lands in the right place.** Drive forward and watch whether
   the scan of a wall in front of you sits ahead of the robot. If it is rotated,
   `laser_frame`'s yaw is wrong; if mirrored, the lidar's `inverted` parameter
@@ -638,6 +718,13 @@ And on the real robot — the Phase 3 claims I could not test:
 - **Whether 20 Hz survives your WiFi.** The firmware's deadman is 400 ms. If
   the robot stutters, packets are being dropped, and the fix is a higher
   `publish_rate`, not a longer deadman.
+- **Whether the measured link is good enough at all.** Pi → ESP32 was measured
+  at ~138 ms average and ~257 ms peak, against a 400 ms deadman. That is a
+  143 ms margin on the worst sample, and roughly 7.7% of packets are lost. The
+  bridge sends on a timer so consecutive losses are survivable, but **this is a
+  network problem and nothing in this package fixes it.** Raising the rate buys
+  redundancy, not latency. If the margin is not acceptable, the answer is a
+  better radio path or a wired link, not more software.
 
 `xacro_lite.py` implements only the subset of xacro this package uses. If real
 `xacro` disagrees with it, real `xacro` is right — tell me and I will fix the
@@ -823,13 +910,13 @@ sends — byte for byte, which `test/test_esp32_bridge.py` enforces.
 ```
   PC ─────────────────────────────┐        ┌──────────────── Raspberry Pi
                                   │  WiFi  │
-  teleop_twist_keyboard           │        │   robot_state_publisher ─┐
-        │ /cmd_vel                │  DDS   │   joint_state_publisher ─┼─▶ /tf
+  kb_teleop  (mmr_pkg)            │        │   robot_state_publisher ─┐
+        │ /cmd_vel   20–30 Hz     │  DDS   │   joint_state_publisher ─┼─▶ /tf
         └─────────────────────────┼───────▶│   sllidar_ros2 ──────────┼─▶ /scan
                                   │        │   v4l2_camera ───────────┴─▶ /image_raw
   rviz2 ◀── /scan /image_raw ─────┤        │   esp32_bridge
             /tf /robot_description│        │        │ UDP :1234
-                                  │        └────────┼──────────────────
+            /diagnostics ─────────┤        └────────┼──────────────────
                                   │                 ▼
                                   └────────── ESP32  "A,angle,speed,rot"
                                                      │ PWM ×3
@@ -844,16 +931,49 @@ ros2 launch mmr_pkg robot.launch.py
 ros2 launch mmr_pkg teleop.launch.py
 
 # PC, terminal 2 — must keep keyboard focus
-ros2 run teleop_twist_keyboard teleop_twist_keyboard
+ros2 run mmr_pkg kb_teleop
 ```
 
-`teleop_twist_keyboard` is **not** started by the launch file on purpose: it
-reads raw keypresses from stdin, and `ros2 launch` does not give children a
-usable terminal, so launching it produces a node that prints its help and then
-ignores every keystroke.
+### The keyboard
 
-**Hold shift.** The unshifted `j`/`l` keys *turn*; the shifted `J`/`L` keys
-*strafe*. This base is holonomic, so the shifted layout is the one you want.
+```
+         q   w   e          w / x   forward / back
+           a   d            a / d   strafe left / right
+             x              q / e   turn left / right
+
+    SPACE  stop now         + / -   faster / slower
+    k      quit             [ / ]   turn slower / faster
+```
+
+Note **`x` is reverse, not `s`** — `s` is deliberately bound to nothing.
+
+The key map is a table at the top of `mmr_pkg/teleop_keys.py` and that is the
+only place to change it. A test asserts no key has two jobs, that every binding
+is a unit vector on exactly one axis, and that all six directions are present,
+so a bad edit fails the suite rather than surprising you on the robot.
+
+Defaults are 0.5 m/s and 1.0 rad/s. With the bridge's default normalisation
+that is about half PWM — brisk for an indoor omni base, so start there.
+
+**`kb_teleop` is not started by any launch file, on purpose.** It reads raw
+keypresses from stdin, and `ros2 launch` gives its children no controlling
+terminal, so launching it would produce a node that starts, looks healthy,
+publishes a steady stream of zeros, and never registers a keystroke — which is
+indistinguishable from a broken robot. It refuses to start when stdin is not a
+TTY rather than pretend.
+
+**A terminal cannot detect key release.** There is no key-up event; release is
+inferred from auto-repeat stopping, so `key_timeout` (0.6 s) must exceed the
+terminal's initial repeat delay (~0.5 s). The cost is a bounded lag between
+lifting a key and the robot stopping. SPACE is immediate and clears the held-key
+set — not just the output, so a key still physically down cannot restart the
+robot on its next repeat — and the firmware's 400 ms deadman is underneath
+everything regardless.
+
+`teleop_twist_keyboard` still works as a second opinion on the same `/cmd_vel`,
+which is useful for deciding whether a problem is the keyboard node or the
+bridge. Hold **shift** with that one: its unshifted `j`/`l` turn, and only the
+shifted `J`/`L` strafe.
 
 ### The bridge
 
@@ -866,18 +986,80 @@ guard it — the bridge stops sending motion if `/cmd_vel` goes quiet for
 `cmd_timeout`, and the firmware brakes regardless if packets stop, which is the
 one that survives the bridge being killed or the PC going to sleep.
 
-Useful parameters (`--ros-args -p name:=value`):
+Tuning lives in **`config/esp32_bridge.yaml`**, which `robot.launch.py` loads,
+so there is one place to change a number. `esp32_ip` is deliberately *not* in
+it — it is per-robot and follows the DHCP lease, so it belongs on the command
+line where a stale value cannot be committed:
+
+```bash
+ros2 launch mmr_pkg robot.launch.py esp32_ip:=10.229.5.249
+```
 
 | Parameter | Default | Meaning |
 |---|---|---|
 | `esp32_ip` | *required* | No default; a wrong IP fails silently over UDP |
+| `esp32_port` | `1234` | Must match `PORT` in the sketch |
 | `max_linear_speed` | `1.0` | The `cmd_vel` that maps to `max_linear_pwm` |
 | `max_angular_speed` | `1.0` | The `cmd_vel` that maps to `max_angular_pwm` |
 | `max_linear_pwm` | `180` | `controller.py`'s cruise value |
 | `max_angular_pwm` | `80` | `controller.py`'s Q/E value |
+| `max_linear_accel` | `0.0` | m/s². **0 = no limit**; see below |
+| `max_angular_accel` | `0.0` | rad/s². 0 = no limit |
+| `max_linear_decel` | `0.0` | m/s². 0 = brake as hard as commanded |
+| `max_angular_decel` | `0.0` | rad/s². 0 = brake as hard as commanded |
+| `publish_rate` | `20.0` | Hz. Must stay well above the deadman's 2.5 Hz |
+| `cmd_timeout` | `0.5` | s of `/cmd_vel` silence before commanding zero |
+| `reply_timeout` | `1.0` | s of ACK silence before the link is called down |
+| `diagnostic_period` | `1.0` | s between `/diagnostics` publications |
 | `strafe_sign` | `1` | Flip to `-1` if A/D come out swapped |
 | `yaw_sign` | `-1` | `-1` reproduces `controller.py` exactly |
 | `prevent_clipping` | `false` | See below |
+| `publish_replies` | `false` | Republish every ACK on `~/esp32_reply` while debugging |
+
+**The acceleration limits default to off, and that is a deliberate blank, not an
+oversight.** This robot has no encoders and there is no measured acceleration
+figure for it, so any non-zero default would be invented. Raise them if the base
+lurches on a step input. Note the *braking* limits default to unlimited on
+purpose: a slow ramp up is comfortable, but a slow ramp down is a robot that
+will not stop when you tell it to. Limiting is applied to the linear **vector**,
+not per-axis, so ramping never bends the direction of travel.
+
+Velocity limiting has the same property. Clamping `(2.0, 1.0)` per-axis against a
+ceiling of 1.0 gives `(1.0, 1.0)` — a 45° error in a robot that was told to go
+mostly forward. The magnitude is scaled instead, so the heading survives and only
+the speed is reduced. The same rule appears in three places (`prevent_clipping`,
+the velocity limiter and the smoother) because it is the same mistake three
+times over.
+
+### Is it actually working? — `/diagnostics`
+
+Rather than logging continuously, the bridge publishes two `DiagnosticStatus`
+entries at 1 Hz, so the questions worth asking have topic-shaped answers:
+
+```bash
+ros2 topic echo /diagnostics                # bridge link + command state
+ros2 topic hz /cmd_vel                      # is the keyboard publishing?
+ros2 topic hz /scan                         # is the lidar publishing?
+ros2 topic hz /image_raw                    # is the camera publishing?
+```
+
+`esp32_bridge: link` carries the link state, `last_reply_age_s`, an RTT
+*estimate*, packets sent, replies received, the reply ratio and the send-error
+count. `esp32_bridge: command` carries `cmd_vel_age_s`, the timeout, the three
+velocities actually sent and the last packet on the wire.
+
+Two honesty notes on those numbers. **`rtt_estimate_s` is an estimate and can
+never be better than one**, because the protocol has no sequence number — replies
+are paired with sends in FIFO order, and one lost packet mis-pairs everything
+after it until the queue drains. `last_reply_age_s` is exact, and it is the
+number that relates to the 400 ms deadman, so prefer it. A real RTT needs a
+sequence number in the firmware, which is out of scope here.
+
+Link transitions are reported once, on change, rather than repeated every tick —
+including the case where the ESP32 has *never* replied, which is what a wrong
+`esp32_ip` looks like. UDP has no connection, so packets to a wrong host vanish
+in silence; without that distinction the most confusing failure this system has
+would still be a silent one.
 
 `prevent_clipping` addresses a real defect in the firmware: it computes
 `power_i = speed*cos(θ−α_i) − rot` and then clamps **each wheel** to ±255. So a
@@ -885,6 +1067,43 @@ fast translation combined with a fast spin saturates, and the robot curves away
 from the commanded heading instead of merely going slower. Enabling this scales
 both terms by one factor, preserving the ratio and therefore the path. It
 defaults to `false` so behaviour matches `controller.py` out of the box.
+
+### Why the logic lives outside the nodes
+
+`bridge_core.py` and `teleop_keys.py` import no ROS. The nodes that wrap them
+(`esp32_bridge.py`, `kb_teleop.py`) contain no arithmetic. This split is load
+bearing, and it exists because of a specific failure:
+
+> `esp32_bridge.py` read `self.max_v`, `self.max_v_pwm`, `self.max_w` and
+> `self.max_w_pwm` on the last statement of `__init__`, after those values had
+> moved onto a collaborator object. The constructor raised `AttributeError`
+> before `rclpy.spin()` was ever reached — **the node had never once been able
+> to start** — and the test suite was green throughout, because importing the
+> node requires `rclpy` and the tests run on a laptop that does not have it.
+
+A test suite that cannot import the thing it is testing will report success
+forever. So the policy — watchdog, limiter, smoother, link state, key map — sits
+in files that a bare Python interpreter can import, and all 119 tests exercise
+the real code rather than a mock of it. Two further guards close the gap that
+remains:
+
+```bash
+python tools/check_repo.py     # static sweep: no ROS, no build, under a second
+python -m pytest test/ -q      # 119 cases
+```
+
+`check_repo.py` parses every class and fails on any `self.x` that is read but
+never assigned, which is exactly the bug above. It also rejects `--` inside an
+XML comment (illegal, not merely discouraged — it has broken `package.xml` and
+`ros2_control.xacro` in this repo on three separate occasions, with an error
+message that names a line number but not the problem), catches a script that is
+not in `install(PROGRAMS …)`, a shim importing a module that does not exist, a
+`test_*.py` not registered with `ament_add_pytest_test`, `sllidar_ros2` creeping
+back into `package.xml`, and a `build/` directory in the source tree. Every one
+of those is a mistake that was actually made here, not a hypothetical.
+
+Neither command needs ROS, hardware, or a build, so there is no excuse to skip
+them. Neither proves a single packet reaches the ESP32.
 
 ### Calibrating the ESP32 bridge
 
@@ -1025,6 +1244,37 @@ correct for a robot with no encoders, not a bug. Setting the fixed frame to
 `odom` just yields *"Frame [odom] does not exist"*. This is also why SLAM is not
 on the table yet.
 
+### The path to real odometry, and why none of it is faked
+
+There is no `/odom`, no `odom → base_link` transform, and no wheel motion in
+`/joint_states` beyond the zeros that keep the TF tree connected. All three are
+absent deliberately: this robot has no encoders, so any of them would be a
+number invented by software and presented as a measurement. Fake odometry is
+worse than none, because everything downstream — SLAM, Nav2, any `map` frame —
+would silently trust it.
+
+What *is* in place is the shape the real thing plugs into. The chain is:
+
+```
+  encoders ─▶ /joint_states ─▶ kiwi FK ─▶ nav_msgs/Odometry ─▶ odom → base_link
+             (real positions)   (exists)      (to write)          (to write)
+```
+
+The middle link already exists and is tested: `kiwi_kinematics.py` holds both
+directions of the kinematics, so forward kinematics is not new work. What is
+missing is genuinely missing — the hardware. To close it you would:
+
+1. Add encoders and report their counts from the ESP32. The current protocol has
+   no room for this; the ACK would need to carry wheel positions, which is a
+   firmware change.
+2. Publish real positions on `/joint_states` and **drop `joint_state_publisher`
+   from `robot.launch.py`** — the two would fight over the same topic.
+3. Integrate FK to a pose and publish `nav_msgs/Odometry` plus the
+   `odom → base_link` transform.
+
+Only then does the RViz fixed frame become `odom`, and only then is SLAM on the
+table. Until step 1 exists, steps 2 and 3 have nothing truthful to publish.
+
 **The camera needs no URDF link to be visible.** RViz's *Image* display carries
 no TF filter and renders whatever arrives. The *Camera* display is the one that
 needs both TF and `CameraInfo` — and it additionally needs a real intrinsic
@@ -1032,7 +1282,7 @@ calibration, which this camera does not have: `v4l2_camera` publishes an
 all-zero `CameraInfo` when calibration is missing, and RViz then computes
 `p[3]/p[0]` = `0/0`, rejecting the frame as *"invalid position calculation
 (nans or infs)"*. So the Image display is not a workaround, it is the correct
-tool here. See TODO 12 if you want a real `camera_link`.
+tool here. See TODO 14 if you want a real `camera_link`.
 
 ---
 
@@ -1046,24 +1296,41 @@ mmr_pkg/
 │               ros2_control.xacro, gazebo.xacro        ← Phase 2
 ├── meshes/     visual/ (+ .mtl), collision/, arm/, collision/arm/
 ├── config/     controllers.yaml                        ← Phase 2
+│               esp32_bridge.yaml                       ← Phase 3 bridge tuning
 ├── worlds/     mmr_world.sdf                           ← Phase 2
 ├── launch/     display.launch.py, gazebo.launch.py
 │               robot.launch.py, teleop.launch.py        ← Phase 3
 ├── rviz/       display.rviz, teleop.rviz                ← Phase 3
+├── generated/  robot.urdf, robot_phase1.urdf   ← expanded xacro, NOT named build/
 ├── esp32/      MotionTestOriginal/MotionTestOriginal.ino  ← the firmware
 │               controller.py         ← the original pygame client
 ├── mmr_pkg/    kiwi_kinematics.py   ← THE FILE TO DIFF AGAINST YOUR FIRMWARE
 │               kiwi_drive_node.py   ← ROS wrapper, no kinematics in it
 │               esp32_protocol.py    ← wire protocol + ROS→PWM, no ROS imports
+│               bridge_core.py       ← watchdog/limiter/link state, no ROS imports
 │               esp32_bridge.py      ← ROS wrapper, no arithmetic in it
-├── scripts/    kiwi_drive_node, esp32_bridge            ← `ros2 run` entry points
-├── test/       test_kiwi_kinematics.py                  ← 16 cases, no ROS needed
-│               test_esp32_bridge.py                     ← 22 cases, no ROS needed
+│               teleop_keys.py       ← THE KEY MAP, one place. No ROS imports
+│               kb_teleop.py         ← terminal + ROS wrapper, no key logic in it
+├── scripts/    kiwi_drive_node, esp32_bridge, kb_teleop ← `ros2 run` entry points
+├── test/       test_kiwi_kinematics.py    16 cases ┐
+│               test_esp32_bridge.py       22 cases │ 119 total,
+│               test_bridge_core.py        45 cases │ none need ROS
+│               test_teleop_keys.py        36 cases ┘
 └── tools/      STEP parsing, measurement and mesh extraction scripts, plus the
-                offline xacro/URDF/control checkers and firmware_diff.py.
-                Not installed by CMake — these are provenance for every number
-                above, not runtime code.
+                offline xacro/URDF/control checkers, firmware_diff.py and
+                check_repo.py. Not installed by CMake — these are provenance for
+                every number above, not runtime code.
 ```
+
+The `mmr_pkg/` modules come in pairs on purpose: a file with **no ROS imports**
+holding the logic, and a thin ROS node wrapping it. That is why the 119 tests
+run on a laptop with no ROS installed, and it is not a stylistic preference —
+see *"Why the logic lives outside the nodes"* in Phase 3 above.
+
+`generated/` was called `build/` until it collided with colcon's own build
+directory and produced `failed to create symbolic link … because existing path
+cannot be removed: Is a directory`. Do not name anything in the source tree
+`build/`, `install/` or `log/`; `tools/check_repo.py` now fails if you do.
 
 The `esp32/` directory is the firmware and its original pygame client, kept in
 the tree because they are the *authority* on how the robot actually behaves.
@@ -1071,8 +1338,4 @@ the tree because they are the *authority* on how the robot actually behaves.
 
 Note `mmr_pkg/` (the Python module) and `urdf/` are siblings. The package is
 `ament_cmake` because it is description-first; `ament_cmake_python` bolts the
-
 one Python library onto it rather than splitting into two packages.
-
-
-stevejidev@stevejidev-B850M-C:~/dev_ws$ ros2 launch mmr_pkg gazebo.launch.py

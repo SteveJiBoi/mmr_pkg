@@ -5,7 +5,7 @@ verifiable without a ROS install: tree shape, joint inventory, mesh resolution,
 frame placement and the wheel-contact invariant. Anything needing a running
 ROS graph (TF echo, RViz warnings) is out of scope and stays unverified.
 
-    python tools/check_urdf_lite.py build/robot.urdf
+    python tools/check_urdf_lite.py generated/robot.urdf
 """
 import argparse
 import math

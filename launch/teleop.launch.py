@@ -8,30 +8,34 @@ RViz's RobotModel display reads it straight off the topic.
 
 THE KEYBOARD IS NOT STARTED HERE, DELIBERATELY
 ----------------------------------------------
-teleop_twist_keyboard reads raw keypresses from stdin. ros2 launch does not
-give its child processes a usable terminal, so launching it from here produces
-a node that starts, prints its help text and then never registers a single
-keystroke -- which looks exactly like a broken robot. Run it yourself, in its
-own terminal:
+Keyboard teleop reads raw keypresses from stdin. ros2 launch does not give its
+child processes a controlling terminal, so launching it from here produces a
+node that starts, looks healthy, publishes a steady stream of zeros and never
+registers a single keystroke -- which is indistinguishable from a broken robot.
+mmr_pkg's own node refuses to start in that situation rather than pretend. Run
+it yourself, in its own terminal:
 
-    ros2 run teleop_twist_keyboard teleop_twist_keyboard
+    ros2 run mmr_pkg kb_teleop
 
 That window must keep FOCUS for the keys to register.
 
-    u i o        hold SHIFT for the same layout in holonomic mode,
-    j k l        where J and L STRAFE left/right instead of turning.
-    m , .        This robot is holonomic, so the shifted layout is
-                 the one you actually want.
+         q   w   e        w / x   forward / back
+           a   d          a / d   strafe left / right
+             x            q / e   turn left / right
 
-    k  stop          q/z  faster/slower (both)
-    i  forward       w/x  faster/slower (linear only)
-    ,  back          e/c  faster/slower (angular only)
-
-    unshifted:  j/l  = TURN left/right
-    SHIFTED:    J/L  = STRAFE left/right,  U/O/M/> = diagonals
+    SPACE  stop now       + / -   faster / slower
+    k      quit           [ / ]   turn slower / faster
 
 Start slow. It defaults to 0.5 m/s and 1.0 rad/s, and with the bridge's default
 normalisation that is about half PWM -- brisk for an indoor omni base.
+
+If you want a second opinion on whether a problem is the keyboard node or the
+bridge, teleop_twist_keyboard publishes the same /cmd_vel and is installed:
+
+    ros2 run teleop_twist_keyboard teleop_twist_keyboard
+
+Hold SHIFT with that one. This robot is holonomic, and only its shifted layout
+strafes; unshifted J/L turn instead.
 """
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument

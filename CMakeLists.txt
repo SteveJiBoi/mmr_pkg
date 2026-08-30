@@ -27,6 +27,7 @@ ament_python_install_package(${PROJECT_NAME})
 install(PROGRAMS
   scripts/kiwi_drive_node
   scripts/esp32_bridge
+  scripts/kb_teleop
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -39,13 +40,20 @@ if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
 
-  # Unit tests. Both are pure Python and need no ROS graph -- kiwi_kinematics
-  # and esp32_protocol are deliberately free of ROS imports -- so they run
-  # under `colcon test` on any machine, and under plain `pytest` on one with no
-  # ROS at all.
+  # Unit tests. All pure Python and needing no ROS graph -- kiwi_kinematics,
+  # esp32_protocol, bridge_core and teleop_keys are deliberately free of ROS
+  # imports -- so they run under `colcon test` on any machine, and under plain
+  # `pytest` on one with no ROS at all.
+  #
+  # That is not a stylistic preference. The logic that decides when to stop the
+  # robot lives in those modules SO THAT it can be executed by a test; when it
+  # lived in the nodes, nothing imported them without rclpy, nothing tested
+  # them, and a fatal typo shipped under a green suite.
   find_package(ament_cmake_pytest REQUIRED)
   ament_add_pytest_test(test_kiwi_kinematics test/test_kiwi_kinematics.py)
   ament_add_pytest_test(test_esp32_bridge test/test_esp32_bridge.py)
+  ament_add_pytest_test(test_bridge_core test/test_bridge_core.py)
+  ament_add_pytest_test(test_teleop_keys test/test_teleop_keys.py)
 endif()
 
 ament_package()

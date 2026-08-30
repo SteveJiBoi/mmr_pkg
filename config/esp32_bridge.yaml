@@ -1,0 +1,82 @@
+# Tuning for esp32_bridge. ONE place for these numbers (S7, S18).
+#
+#   ros2 launch mmr_pkg robot.launch.py            # loads this file
+#   ros2 run mmr_pkg esp32_bridge --ros-args \
+#       --params-file config/esp32_bridge.yaml -p esp32_ip:=10.229.5.249
+#
+# esp32_ip is NOT here on purpose. It is per-robot, it changes with the DHCP
+# lease, and a stale address committed to a config file is the single most
+# confusing failure this system has: UDP has no connection, so packets to the
+# wrong host vanish silently and the robot just sits there. Pass it on the
+# command line, or let robot.launch.py's esp32_ip argument supply it.
+#
+# /** applies to any node that loads the file regardless of name or namespace,
+# so remapping or namespacing the bridge does not silently orphan the config.
+/**:
+  ros__parameters:
+
+    # ---------------------------------------------------------------- link
+    esp32_port: 1234              # must match PORT in MotionTestOriginal.ino
+
+    # ------------------------------------------------------------- units
+    # READ mmr_pkg/esp32_protocol.py "UNITS" BEFORE CHANGING THESE.
+    #
+    # The PWM numbers are known-good: 180 and 80 are what esp32/controller.py
+    # has actually driven this robot with. The m/s and rad/s numbers are NOT
+    # measurements -- the robot has no encoders and there is no measured
+    # constant relating PWM to ground speed. 1.0 is a declared normalisation,
+    # so for now treat a cmd_vel of 1.0 as "full scale", not as one metre per
+    # second. README "Calibrating the ESP32 bridge" has the stopwatch method
+    # for turning these into real numbers.
+    #
+    # max_linear_speed does double duty: the ceiling velocities are clamped to,
+    # AND the denominator of the PWM map. One number, one meaning.
+    max_linear_speed: 1.0         # m/s   maps to max_linear_pwm
+    max_angular_speed: 1.0        # rad/s maps to max_angular_pwm
+    max_linear_pwm: 180           # controller.py's cruise speed
+    max_angular_pwm: 80           # controller.py's Q/E rotation
+
+    # ------------------------------------------------------- acceleration
+    # 0.0 means no limit. These default to off because there is no measured
+    # acceleration figure for this robot; anything else here would be invented.
+    # Raise the accel limits if the robot lurches on a step input.
+    #
+    # Braking is left unlimited deliberately. A slow ramp up is comfortable; a
+    # slow ramp down is a robot that will not stop when you tell it to.
+    max_linear_accel: 0.0         # m/s^2
+    max_angular_accel: 0.0        # rad/s^2
+    max_linear_decel: 0.0         # m/s^2   0 = brake as hard as commanded
+    max_angular_decel: 0.0        # rad/s^2
+
+    # --------------------------------------------------------------- signs
+    # Wiring-dependent and NOT knowable from the source. If the robot strafes
+    # the wrong way, flip strafe_sign; do not edit the angle arithmetic, or
+    # this package and the firmware will disagree in a way that is very hard to
+    # find later. See tools/firmware_diff.py.
+    strafe_sign: 1                # -1 if A and D come out swapped
+    yaw_sign: -1                  # -1 reproduces controller.py exactly
+
+    # -------------------------------------------------------------- timing
+    # The firmware brakes if no packet arrives for 400 ms, so publish_rate has
+    # to stay comfortably above 2.5 Hz. 20 Hz gives a 50 ms gap and survives
+    # several consecutive losses -- which matters, because the measured link
+    # drops around 7.7% of packets.
+    publish_rate: 20.0            # Hz
+    cmd_timeout: 0.5              # s, zero the command if /cmd_vel goes quiet
+    reply_timeout: 1.0            # s, call the link down after this much silence
+    diagnostic_period: 1.0        # s, /diagnostics rate
+
+    # ------------------------------------------------------------- clipping
+    # The firmware clamps each wheel to +-255 AFTER subtracting rot, so a fast
+    # translation plus a fast spin saturates and the robot curves away from the
+    # heading it was given. true scales both down together so the path stays
+    # right and only the speed suffers. false behaves exactly like
+    # controller.py, which is the default because that is the known-good
+    # baseline.
+    prevent_clipping: false
+
+    # ------------------------------------------------------------ debugging
+    # Republishes every ACK on ~/esp32_reply. Off by default: at 20 Hz it is a
+    # steady stream of string allocation that nothing normally reads. Turn it
+    # on while diagnosing the link, off again afterwards.
+    publish_replies: false

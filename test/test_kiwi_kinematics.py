@@ -173,9 +173,9 @@ def test_rejects_bad_geometry():
 def test_defaults_match_the_urdf():
     """Guards against base.xacro and this module drifting apart."""
     import xml.etree.ElementTree as ET
-    urdf = os.path.join(os.path.dirname(__file__), "..", "build", "robot.urdf")
+    urdf = os.path.join(os.path.dirname(__file__), "..", "generated", "robot.urdf")
     if not os.path.isfile(urdf):
-        pytest.skip("build/robot.urdf not generated; run tools/xacro_lite.py")
+        pytest.skip("generated/robot.urdf not generated; run tools/xacro_lite.py")
     root = ET.parse(urdf).getroot()
     J = {j.get("name"): j for j in root.findall("joint")}
     for i, want in enumerate(DEFAULT_WHEEL_ANGLES_DEG):

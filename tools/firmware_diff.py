@@ -9,7 +9,7 @@ and this is that diff, automated so it stays true as either side changes.
 
 It reads three things and cross-checks them:
 
-  * the mounting bearings in build/robot.urdf  (the measured ground truth)
+  * the mounting bearings in generated/robot.urdf  (the measured ground truth)
   * `wheelDeg[]` and `drive()` in the .ino     (what the robot actually runs)
   * inverse_kinematics() in kiwi_kinematics.py (what the simulation runs)
 
@@ -35,7 +35,7 @@ import xml.etree.ElementTree as ET
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-URDF = os.path.join(ROOT, "build", "robot.urdf")
+URDF = os.path.join(ROOT, "generated", "robot.urdf")
 INO = os.path.join(ROOT, "esp32", "MotionTestOriginal",
                    "MotionTestOriginal.ino")
 
@@ -54,7 +54,7 @@ def urdf_bearings(path):
     if not os.path.exists(path):
         fail(f"{path} not found. Regenerate it with\n"
              f"  python tools/xacro_lite.py urdf/mmr_bot.urdf.xacro "
-             f"-o build/robot.urdf")
+             f"-o generated/robot.urdf")
     root = ET.parse(path).getroot()
     out = {}
     # findall, not iter: <ros2_control> contains <joint name="wheel_0_joint">
@@ -133,7 +133,7 @@ def main():
     print("ESP32 firmware  vs  mmr_pkg/kiwi_kinematics.py")
     print("=" * 72)
     print(f"URDF mounting bearings   {[round(b, 3) for b in bearings]} deg "
-          f"(measured, build/robot.urdf)")
+          f"(measured, generated/robot.urdf)")
     print(f"firmware wheelDeg[]      {fw['wheel_deg']} deg "
           f"(esp32 sketch)")
     print(f"firmware deadman         {fw['deadman_ms']} ms   udp port "

@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+"""Console entry point so `ros2 run mmr_pkg kb_teleop` works.
+
+Same shim pattern as scripts/kiwi_drive_node; see CMakeLists.txt for why an
+ament_cmake package needs these by hand.
+
+Propagates the exit status, unlike the older shims: kb_teleop returns 2 when
+stdin is not a terminal, and swallowing that would make "started from a launch
+file" look like a clean run.
+"""
+from mmr_pkg.kb_teleop import main
+
+if __name__ == "__main__":
+    raise SystemExit(main())

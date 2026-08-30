@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Offline consistency check for the Phase 2 control wiring.
 
-    python tools/xacro_lite.py urdf/mmr_bot.urdf.xacro -o build/robot.urdf
-    python tools/check_phase2.py build/robot.urdf config/controllers.yaml
+    python tools/xacro_lite.py urdf/mmr_bot.urdf.xacro -o generated/robot.urdf
+    python tools/check_phase2.py generated/robot.urdf config/controllers.yaml
 
 WHY THIS EXISTS
 ---------------

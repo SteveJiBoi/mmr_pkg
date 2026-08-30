@@ -14,7 +14,7 @@ robot. Fix that one. Do not "fix" both to meet in the middle.
 Geometry and sign convention
 ----------------------------
 Derived in tools/kiwi_check.py from the generated URDF, not asserted here.
-Re-run that script after changing any geometry; it re-reads build/robot.urdf
+Re-run that script after changing any geometry; it re-reads generated/robot.urdf
 and re-derives everything below from the joint origins and axes.
 
 Wheel i is mounted at bearing a_i, measured CCW from robot +X (forward), at
