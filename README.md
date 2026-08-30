@@ -27,7 +27,6 @@
 </table>
 
 |  |  |
-|---|---|
 | **Base** | Kiwi drive — 3 omniwheels at 60° / 180° / 300°, Ø 60 mm, on a Ø 240 mm plate |
 | **Arm** | SO-101, 6 movable joints, vendored from [TheRobotStudio](https://github.com/TheRobotStudio/SO-ARM100) |
 | **Sensors** | RPLIDAR C1 (USB), USB camera. **No encoders** — which is why there is no odometry |
