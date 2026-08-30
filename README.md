@@ -1071,4 +1071,8 @@ the tree because they are the *authority* on how the robot actually behaves.
 
 Note `mmr_pkg/` (the Python module) and `urdf/` are siblings. The package is
 `ament_cmake` because it is description-first; `ament_cmake_python` bolts the
+
 one Python library onto it rather than splitting into two packages.
+
+
+stevejidev@stevejidev-B850M-C:~/dev_ws$ ros2 launch mmr_pkg gazebo.launch.py
