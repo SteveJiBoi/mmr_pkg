@@ -34,19 +34,6 @@
 | **Compute** | Raspberry Pi 5 (Ubuntu 24.04, ROS 2 Jazzy) → WiFi → ESP32 (motor PWM) |
 | **Geometry** | Measured from the Fusion 360 STEP export (`mmr_bot.step`). Nothing invented — see [TODOs](#assumptions-and-todos) |
 
-> ### ⚠️ Read this before trusting anything below
->
-> This package was built on a Windows machine **with no ROS 2 installed**.
-> `xacro`, `check_urdf`, `rviz2`, `colcon`, `ros2` and **Gazebo** were never run,
-> and neither the Pi nor the ESP32 was ever reachable from it — **no packet from
-> this code has ever left the machine that wrote it.**
->
-> What *was* run is a set of offline reimplementations, and they are listed
-> honestly in [What is and isn't verified](#what-is-and-isnt-verified). Claims
-> that need hardware are marked individually rather than glossed over.
-
----
-
 ## Quick start
 
 ```bash
