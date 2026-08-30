@@ -1,0 +1,116 @@
+{
+ "BaseCamMount v2:1": {
+  "watertight": false,
+  "vol_mm3": null,
+  "hull_mm3": 44157.73582517113,
+  "tris": 1494
+ },
+ "BaseMotor v1:1": {
+  "watertight": true,
+  "vol_mm3": 69803.96276797021,
+  "hull_mm3": 78607.05898508316,
+  "tris": 5518
+ },
+ "BaseMotor v1:2": {
+  "watertight": true,
+  "vol_mm3": 69803.96276797024,
+  "hull_mm3": 78607.0589850832,
+  "tris": 5518
+ },
+ "BaseMotor v1:3": {
+  "watertight": true,
+  "vol_mm3": 69803.96276797021,
+  "hull_mm3": 78607.05898508316,
+  "tris": 5518
+ },
+ "BaseMotorMount v1:1": {
+  "watertight": true,
+  "vol_mm3": 8392.73776030042,
+  "hull_mm3": 41593.763899988604,
+  "tris": 1700
+ },
+ "BaseMotorMount v1:2": {
+  "watertight": true,
+  "vol_mm3": 8392.73776030042,
+  "hull_mm3": 41593.763899988655,
+  "tris": 1700
+ },
+ "BaseMotorMount v1:3": {
+  "watertight": true,
+  "vol_mm3": 8392.737760300424,
+  "hull_mm3": 41593.763899988604,
+  "tris": 1700
+ },
+ "BasePlate v11:1": {
+  "watertight": true,
+  "vol_mm3": 169127.8024732344,
+  "hull_mm3": 541863.7674348988,
+  "tris": 13938
+ },
+ "Heatsink+fan RPi-5 v2:1": {
+  "watertight": false,
+  "vol_mm3": null,
+  "hull_mm3": 29105.053303083623,
+  "tris": 138818
+ },
+ "Innomaker-U20CAM-1080P-1 v1 v1:1": {
+  "watertight": false,
+  "vol_mm3": null,
+  "hull_mm3": 17439.299325782653,
+  "tris": 2188
+ },
+ "Pi_5_Bottom_Case v3:1": {
+  "watertight": false,
+  "vol_mm3": null,
+  "hull_mm3": 53433.97989623148,
+  "tris": 9600
+ },
+ "Pi_5_Top_Case v1:1": {
+  "watertight": true,
+  "vol_mm3": 17160.928490647122,
+  "hull_mm3": 87381.1922202182,
+  "tris": 6012
+ },
+ "RPLIDAR C1 v1:1": {
+  "watertight": false,
+  "vol_mm3": null,
+  "hull_mm3": 114004.26643298913,
+  "tris": 41921
+ },
+ "RodaOmni 60 mm v1:1": {
+  "watertight": false,
+  "vol_mm3": null,
+  "hull_mm3": 70474.44932523208,
+  "tris": 18212
+ },
+ "RodaOmni 60 mm v1:2": {
+  "watertight": false,
+  "vol_mm3": null,
+  "hull_mm3": 70474.45029212539,
+  "tris": 18212
+ },
+ "RodaOmni 60 mm v1:3": {
+  "watertight": false,
+  "vol_mm3": null,
+  "hull_mm3": 70474.45082708706,
+  "tris": 18212
+ },
+ "SO101 Assembly v2:1": {
+  "watertight": false,
+  "vol_mm3": null,
+  "hull_mm3": 3225945.128880447,
+  "tris": 832493
+ },
+ "TopPlate v23:1": {
+  "watertight": true,
+  "vol_mm3": 112534.33817754698,
+  "hull_mm3": 234871.71327860758,
+  "tris": 11440
+ },
+ "raspberry_pi_5 v2:1": {
+  "watertight": false,
+  "vol_mm3": null,
+  "hull_mm3": 64950.999270653876,
+  "tris": 104858
+ }
+}

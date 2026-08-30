@@ -1,0 +1,73 @@
+<?xml version="1.0"?>
+<!-- ====================================================================== -->
+<!-- Inertial macros.                                                       -->
+<!--                                                                        -->
+<!-- Per the brief, NO placeholder identity inertias are emitted anywhere in -->
+<!-- this package. Chassis and wheel inertias are currently unset and are    -->
+<!-- gated behind the `use_inertial` flag in base.xacro (default false), so  -->
+<!-- the description loads in RViz with no invented numbers.                 -->
+<!--                                                                        -->
+<!-- To fill them in: Fusion 360 -> select body/component -> Properties ->   -->
+<!-- Physical, read Mass, Center of Mass and the Moments of Inertia at the   -->
+<!-- centre of mass. Paste into the properties at the top of base.xacro and  -->
+<!-- flip use_inertial to true.                                             -->
+<!--                                                                        -->
+<!-- Fusion reports inertia in kg*mm^2 by default; URDF needs kg*m^2.        -->
+<!-- Divide by 1e6. Fusion also reports the PRODUCTS of inertia with the     -->
+<!-- opposite sign convention to URDF, so Ixy_urdf = -Ixy_fusion. The        -->
+<!-- inertial_from_fusion macro does both conversions for you.              -->
+<!-- ====================================================================== -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- Exact tensor, already in URDF convention (kg, m, URDF product signs). -->
+  <xacro:macro name="inertial_exact"
+               params="mass ixx iyy izz ixy:=0 ixz:=0 iyz:=0
+                       ox:=0 oy:=0 oz:=0">
+    <inertial>
+      <origin xyz="${ox} ${oy} ${oz}" rpy="0 0 0"/>
+      <mass value="${mass}"/>
+      <inertia ixx="${ixx}" iyy="${iyy}" izz="${izz}"
+               ixy="${ixy}" ixz="${ixz}" iyz="${iyz}"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- Paste Fusion numbers straight in: mass in kg, CoM in mm, inertia in
+       kg*mm^2 with Fusion's product-of-inertia sign convention. -->
+  <xacro:macro name="inertial_from_fusion"
+               params="mass ixx iyy izz ixy:=0 ixz:=0 iyz:=0
+                       com_x_mm:=0 com_y_mm:=0 com_z_mm:=0">
+    <inertial>
+      <origin xyz="${com_x_mm/1000.0} ${com_y_mm/1000.0} ${com_z_mm/1000.0}"
+              rpy="0 0 0"/>
+      <mass value="${mass}"/>
+      <inertia ixx="${ixx/1.0e6}" iyy="${iyy/1.0e6}" izz="${izz/1.0e6}"
+               ixy="${-ixy/1.0e6}" ixz="${-ixz/1.0e6}" iyz="${-iyz/1.0e6}"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- Solid cylinder about its own centre, spin axis +X (the wheel case).
+       Only used if you choose to approximate rather than paste Fusion data. -->
+  <xacro:macro name="inertial_cylinder_x" params="mass radius length">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="${mass}"/>
+      <inertia ixx="${0.5*mass*radius*radius}"
+               iyy="${mass*(3*radius*radius + length*length)/12.0}"
+               izz="${mass*(3*radius*radius + length*length)/12.0}"
+               ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- Solid cylinder about its own centre, spin axis +Z (the base-plate case). -->
+  <xacro:macro name="inertial_cylinder_z" params="mass radius length">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="${mass}"/>
+      <inertia ixx="${mass*(3*radius*radius + length*length)/12.0}"
+               iyy="${mass*(3*radius*radius + length*length)/12.0}"
+               izz="${0.5*mass*radius*radius}"
+               ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+  </xacro:macro>
+
+</robot>

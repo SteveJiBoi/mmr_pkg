@@ -1,0 +1,60 @@
+<?xml version="1.0"?>
+<!-- ====================================================================== -->
+<!-- Sensors. Phase 1 adds the link and fixed joint only; the Gazebo         -->
+<!-- gpu_lidar sensor and the ros_gz bridge belong to Phase 2.               -->
+<!-- ====================================================================== -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- RPLIDAR C1, mounted on the forward tab of the top plate.
+       x/y are solid: the rotor axis was located from the turret geometry at
+       CAD (0.200, -133.78) mm, giving 133.781 mm forward of base_link and
+       0.004 mm off centre (i.e. on the forward axis to within 4 microns).
+
+       TODO(confirm z): 0.105180 m is the MID-HEIGHT of the turret shell
+       (CAD z 137.000..163.241 mm). The true optical/scan plane of an RPLIDAR
+       C1 is not derivable from this STEP - the CAD body is a solid shell with
+       no modelled optics. If you want the scan plane exactly, measure from
+       the datasheet and override laser_z below. Everything else in this file
+       is measured, this one number is a documented approximation. -->
+  <xacro:property name="laser_x" value="0.133781"/>
+  <xacro:property name="laser_y" value="0.000004"/>
+  <xacro:property name="laser_z" value="0.105180"/>
+
+  <!-- rpy is identity: the lidar body is axis-aligned with base_link in CAD,
+       and the C1 scans in its own XY plane with zero angle at its +X. -->
+  <xacro:property name="laser_roll"  value="0"/>
+  <xacro:property name="laser_pitch" value="0"/>
+  <xacro:property name="laser_yaw"   value="0"/>
+
+  <joint name="laser_joint" type="fixed">
+    <origin xyz="${laser_x} ${laser_y} ${laser_z}"
+            rpy="${laser_roll} ${laser_pitch} ${laser_yaw}"/>
+    <parent link="base_link"/>
+    <child  link="laser_frame"/>
+  </joint>
+
+  <link name="laser_frame">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://mmr_pkg/meshes/visual/rplidar_c1.obj"/>
+      </geometry>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://mmr_pkg/meshes/collision/rplidar_c1.stl"/>
+      </geometry>
+    </collision>
+    <!-- TODO(inertial): RPLIDAR C1 mass not supplied. Datasheet value or a
+         Fusion physical-properties readout would fill this. Not invented. -->
+  </link>
+
+  <!-- NOTE: the brief says "no cameras yet", but the STEP does model one:
+       an Innomaker U20CAM-1080P on a BaseCamMount, facing forward. It is
+       currently merged into the base_link visual mesh and its convex hull is
+       part of base_link's collision (camera_pod.stl). If you want a real
+       camera_link + optical frame, say so and it can be split out - the
+       mount transform is measurable from the same STEP. -->
+
+</robot>

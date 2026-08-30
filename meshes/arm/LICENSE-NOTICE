@@ -1,0 +1,48 @@
+Third-party notice — SO-101 arm assets
+======================================
+
+The 13 STL files in this directory, their convex decompositions in
+../collision/arm/, and the joint/link geometry expressed in ../../urdf/arm.xacro
+are NOT original to mmr_pkg. They are vendored from:
+
+    Project:  SO-ARM100 (SO-101 variant)
+    Owner:    The Robot Studio
+    Source:   https://github.com/TheRobotStudio/SO-ARM100
+    Path:     Simulation/SO101/
+    Licence:  Apache License 2.0
+    Retrieved: 2026-08-30 from branch `main`
+
+Files taken verbatim
+--------------------
+    Simulation/SO101/so101_new_calib.urdf   -> tools/upstream/so101_new_calib.urdf
+    Simulation/SO101/so101_old_calib.urdf   -> tools/upstream/so101_old_calib.urdf
+    Simulation/SO101/assets/*.stl           -> meshes/arm/*.stl   (13 files)
+
+The two .urdf files are kept unmodified under tools/upstream/ specifically so
+this vendoring stays auditable and diffable against future upstream releases.
+
+Modifications
+-------------
+Per the Apache-2.0 requirement to state changes, the following were made. None
+alter the geometry: every origin, limit and inertia value in urdf/arm.xacro is
+carried across byte-for-byte from so101_new_calib.urdf by a text-level
+transform (tools/gen_arm_xacro.py), which then re-parses its own output and
+asserts that the link set, joint names, joint types, limits and origins still
+match upstream.
+
+  1. Converted to a xacro macro (`so101_arm`) taking prefix/parent/origin.
+  2. Link names prefixed with `arm_` to avoid colliding with this robot's own
+     `base_link`. JOINT NAMES ARE DELIBERATELY UNCHANGED.
+  3. Mesh paths rewritten from relative `assets/` references to
+     `package://mmr_pkg/meshes/arm/`.
+  4. Collision geometry re-pointed from the full-detail visual meshes to
+     convex decompositions under `meshes/collision/arm/`, generated with CoACD
+     by tools/arm_collision.py. The STL files themselves are unmodified.
+  5. Six ROS 1 `<transmission>` blocks dropped (ROS 2 uses `<ros2_control>`).
+  6. A stray `<origin>` element inside `<link name="gripper_frame_link">`
+     dropped; it is not valid URDF and is ignored by parsers regardless.
+
+The Apache-2.0 licence text is at https://www.apache.org/licenses/LICENSE-2.0.
+Everything else in mmr_pkg (chassis description, meshes under meshes/visual/
+and meshes/collision/ excluding arm/, and all tooling) is original work and is
+covered by the licence declared in package.xml.

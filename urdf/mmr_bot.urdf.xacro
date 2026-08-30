@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<!-- ====================================================================== -->
+<!-- mmr_bot - top-level description                                        -->
+<!--                                                                        -->
+<!--   base_footprint                                                       -->
+<!--    +- base_link                        (chassis, camera and Pi merged)  -->
+<!--        +- wheel_0_link                 continuous,  60 deg              -->
+<!--        +- wheel_1_link                 continuous, 180 deg              -->
+<!--        +- wheel_2_link                 continuous, 300 deg              -->
+<!--        +- laser_frame                  fixed, RPLIDAR C1                -->
+<!--        +- arm_base_link                fixed, SO-101 mount              -->
+<!--            +- arm_shoulder_link        shoulder_pan                     -->
+<!--                +- arm_upper_arm_link   shoulder_lift                    -->
+<!--                    +- arm_lower_arm_link   elbow_flex                   -->
+<!--                        +- arm_wrist_link   wrist_flex                   -->
+<!--                            +- arm_gripper_link         wrist_roll       -->
+<!--                                +- arm_moving_jaw_..._link  gripper      -->
+<!--                                +- arm_gripper_frame_link   fixed        -->
+<!--                                                                        -->
+<!-- 14 links, 13 joints, of which 9 are movable (3 wheels + 6 arm).         -->
+<!-- ====================================================================== -->
+<robot name="mmr_bot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:include filename="$(find mmr_pkg)/urdf/inertial_macros.xacro"/>
+  <xacro:include filename="$(find mmr_pkg)/urdf/base.xacro"/>
+  <xacro:include filename="$(find mmr_pkg)/urdf/sensors.xacro"/>
+  <xacro:include filename="$(find mmr_pkg)/urdf/arm.xacro"/>
+
+  <!-- ================================================================== -->
+  <!-- SO-101 arm mount.                                                   -->
+  <!--                                                                     -->
+  <!-- Solved exactly, not eyeballed. The CAD part 'Base_SO101 v12:1' and   -->
+  <!-- upstream 'base_so101_v2.stl' were shown to share an identical local  -->
+  <!-- mesh frame (bbox agreement to 1e-16 m), so the arm's URDF base_link  -->
+  <!-- is recovered as  T_arm = T_cad_world * inv(T_urdf_visual_origin).    -->
+  <!-- Round-tripping the STL back through that transform reproduces the    -->
+  <!-- CAD world bbox to within 0.5 mm. See tools/arm_mount.py.             -->
+  <!--                                                                     -->
+  <!-- rpy is exactly zero: the arm's forward axis already coincides with   -->
+  <!-- the robot's, both facing CAD -Y.                                     -->
+  <!-- ================================================================== -->
+  <xacro:property name="arm_mount_x" value="0.014091"/>
+  <xacro:property name="arm_mount_y" value="-0.000442"/>
+  <xacro:property name="arm_mount_z" value="0.079200"/>
+
+  <xacro:so101_arm prefix="arm_" parent="base_link">
+    <origin xyz="${arm_mount_x} ${arm_mount_y} ${arm_mount_z}" rpy="0 0 0"/>
+  </xacro:so101_arm>
+
+</robot>

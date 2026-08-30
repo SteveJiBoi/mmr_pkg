@@ -1,0 +1,207 @@
+<?xml version="1.0"?>
+<!-- ====================================================================== -->
+<!-- mmr_bot chassis: kiwi drive, three omniwheels at 120 degrees.          -->
+<!--                                                                        -->
+<!-- EVERY dimension below is measured from the Fusion 360 STEP export       -->
+<!-- (tools/step_parse.py -> tools/extract_meshes.py). Nothing is invented.  -->
+<!-- Provenance for each value is in README.md, section "Derived geometry".  -->
+<!--                                                                        -->
+<!-- Frame convention (brief section 3.3):                                   -->
+<!--   base_footprint  ground plane, directly under the wheel-triad centre   -->
+<!--   base_link       underside of the base plate, +X forward, +Z up        -->
+<!--   wheel_i_link    at the axle; local +X is the spin axis, pointing      -->
+<!--                   radially OUTWARD along the mounting angle             -->
+<!-- ====================================================================== -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ================================================================== -->
+  <!-- GEOMETRY - edit here and nowhere else                              -->
+  <!-- ================================================================== -->
+
+  <!-- Wheel. "RodaOmni 60 mm" is a DIAMETER: measured max radius 30.000 mm
+       on all three wheels. wheel_width is the 2 x 9.500 mm hub disc pair,
+       which is the ground-contact surface as drawn; the rollers overhang
+       axially to a 27.287 mm envelope but sit ~1 mm under the hub radius. -->
+  <xacro:property name="wheel_radius"        value="0.030"/>
+  <xacro:property name="wheel_width"         value="0.019"/>
+
+  <!-- Centre of the wheel triad to each wheel centre. All three measure
+       135.500 mm from the triad centroid, equal to better than 0.001 mm. -->
+  <xacro:property name="base_radius"         value="0.135500"/>
+
+  <!-- Mounting angles, degrees CCW from +X (forward). Confirmed: forward is
+       CAD -Y, the direction the lidar, camera and arm all face. -->
+  <xacro:property name="wheel_0_angle_deg"   value="60"/>
+  <xacro:property name="wheel_1_angle_deg"   value="180"/>
+  <xacro:property name="wheel_2_angle_deg"   value="300"/>
+
+  <!-- Ground to base_link. base_link is the underside of the base plate;
+       the plate measures z = 0.0001..12.0001 mm in this frame. -->
+  <xacro:property name="base_link_height"    value="0.045"/>
+
+  <!-- Round base plate: measured 240.002 mm diameter (roundness confirmed,
+       outer radius present in all 36 angular bins at 120.000 +/- 0.001 mm)
+       and 12.000 mm thick. The brief's "200 mm" FILL was wrong. -->
+  <xacro:property name="base_plate_radius"   value="0.120"/>
+  <xacro:property name="base_plate_thick"    value="0.012"/>
+  <xacro:property name="base_plate_z"        value="0.0"/>
+
+  <!-- Top plate: same 120.000 mm radius disc, 5.000 mm thick, spanning
+       z = 72.000..77.000 mm. It also has a forward tab reaching r = 140.202 mm
+       that carries the lidar; the tab is NOT in the collision cylinder, but
+       the lidar's own collision hull covers that region. -->
+  <xacro:property name="top_plate_radius"    value="0.120"/>
+  <xacro:property name="top_plate_thick"     value="0.005"/>
+  <xacro:property name="top_plate_z"         value="0.072"/>
+
+  <!-- CONSISTENCY CHECK, brief section 3.1: the axle height above ground must
+       equal the wheel radius exactly, or the wheels do not touch z = 0.
+       Derived, never typed, so the two can never drift apart.
+       The brief's "27 mm axle height" is inconsistent with a 30 mm radius;
+       the STEP says 30.000 mm and the STEP wins. See README. -->
+  <xacro:property name="wheel_z" value="${wheel_radius - base_link_height}"/>
+
+  <!-- Emit <inertial> blocks? Off by default: the chassis mass properties are
+       not yet supplied and this package will not invent them. See
+       inertial_macros.xacro and the TODO block further down. -->
+  <xacro:property name="use_inertial" value="false"/>
+
+  <xacro:property name="deg" value="${pi/180.0}"/>
+
+  <xacro:property name="mesh_visual"    value="package://mmr_pkg/meshes/visual"/>
+  <xacro:property name="mesh_collision" value="package://mmr_pkg/meshes/collision"/>
+
+  <!-- ================================================================== -->
+  <!-- base_footprint                                                      -->
+  <!-- Deliberately has NO <inertial>: KDL warns about inertia on the root -->
+  <!-- link, and a footprint frame is massless by definition.              -->
+  <!-- ================================================================== -->
+  <link name="base_footprint"/>
+
+  <joint name="base_footprint_joint" type="fixed">
+    <origin xyz="0 0 ${base_link_height}" rpy="0 0 0"/>
+    <parent link="base_footprint"/>
+    <child  link="base_link"/>
+  </joint>
+
+  <!-- ================================================================== -->
+  <!-- base_link                                                           -->
+  <!-- ================================================================== -->
+  <link name="base_link">
+    <!-- No <material>: the .obj ships a .mtl carrying the 27 CAD part
+         colours, and a URDF material would override them in RViz. -->
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="${mesh_visual}/base_link.obj"/>
+      </geometry>
+    </visual>
+
+    <!-- Base plate: cylinder primitive, as the brief requires. -->
+    <collision>
+      <origin xyz="0 0 ${base_plate_z + base_plate_thick/2}" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="${base_plate_radius}" length="${base_plate_thick}"/>
+      </geometry>
+    </collision>
+
+    <!-- Top plate: cylinder primitive (forward lidar tab not included). -->
+    <collision>
+      <origin xyz="0 0 ${top_plate_z + top_plate_thick/2}" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="${top_plate_radius}" length="${top_plate_thick}"/>
+      </geometry>
+    </collision>
+
+    <!-- Motor + mount pod under each wheel. One convex hull, extracted in a
+         canonical 0-degree frame, reused at all three mounting angles. -->
+    <xacro:macro name="motor_pod_collision" params="angle_deg">
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 ${angle_deg * deg}"/>
+        <geometry>
+          <mesh filename="${mesh_collision}/motor_pod.stl"/>
+        </geometry>
+      </collision>
+    </xacro:macro>
+    <xacro:motor_pod_collision angle_deg="${wheel_0_angle_deg}"/>
+    <xacro:motor_pod_collision angle_deg="${wheel_1_angle_deg}"/>
+    <xacro:motor_pod_collision angle_deg="${wheel_2_angle_deg}"/>
+
+    <!-- Camera pod and Pi stack: convex hulls, already in base_link frame. -->
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="${mesh_collision}/camera_pod.stl"/>
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="${mesh_collision}/pi_stack.stl"/>
+      </geometry>
+    </collision>
+
+    <!-- TODO(inertial): chassis mass excluding arm, Pi and battery is 1.0 kg
+         per the brief, but CoM and the inertia tensor are not yet supplied.
+         Paste the Fusion 360 physical-properties numbers into
+         inertial_macros.xacro's inertial_from_fusion and set
+         use_inertial to true. No placeholder tensor is emitted here. -->
+    <xacro:if value="${use_inertial}">
+      <!-- <xacro:inertial_from_fusion mass="1.0"
+             ixx="TODO" iyy="TODO" izz="TODO"
+             ixy="TODO" ixz="TODO" iyz="TODO"
+             com_x_mm="TODO" com_y_mm="TODO" com_z_mm="TODO"/> -->
+    </xacro:if>
+  </link>
+
+  <!-- ================================================================== -->
+  <!-- Wheels                                                              -->
+  <!--                                                                     -->
+  <!-- The link frame is base_link -> Trans(base_radius @ angle, wheel_z)   -->
+  <!--                             -> Rz(angle)                            -->
+  <!-- so local +X is radially outward and IS the spin axis. wheel.obj was  -->
+  <!-- exported into exactly this frame, which is why one mesh serves all   -->
+  <!-- three wheels. Verified after export: radius 0.03001 m about local    -->
+  <!-- +X, half-width 0.01365 m.                                           -->
+  <!-- ================================================================== -->
+  <xacro:macro name="omni_wheel" params="index angle_deg">
+    <joint name="wheel_${index}_joint" type="continuous">
+      <origin xyz="${base_radius * cos(angle_deg * deg)}
+                   ${base_radius * sin(angle_deg * deg)}
+                   ${wheel_z}"
+              rpy="0 0 ${angle_deg * deg}"/>
+      <parent link="base_link"/>
+      <child  link="wheel_${index}_link"/>
+      <axis xyz="1 0 0"/>
+    </joint>
+
+    <link name="wheel_${index}_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="${mesh_visual}/wheel.obj"/>
+        </geometry>
+      </visual>
+
+      <!-- Cylinder primitive, as the brief requires. A URDF cylinder is
+           built about +Z, so rotate it onto the +X spin axis. -->
+      <collision>
+        <origin xyz="0 0 0" rpy="0 ${pi/2} 0"/>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+      </collision>
+
+      <!-- TODO(inertial): per-wheel mass not supplied. See base_link. -->
+      <xacro:if value="${use_inertial}">
+        <!-- <xacro:inertial_cylinder_x mass="TODO"
+               radius="${wheel_radius}" length="${wheel_width}"/> -->
+      </xacro:if>
+    </link>
+  </xacro:macro>
+
+  <xacro:omni_wheel index="0" angle_deg="${wheel_0_angle_deg}"/>
+  <xacro:omni_wheel index="1" angle_deg="${wheel_1_angle_deg}"/>
+  <xacro:omni_wheel index="2" angle_deg="${wheel_2_angle_deg}"/>
+
+</robot>
