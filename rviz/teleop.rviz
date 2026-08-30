@@ -1,0 +1,140 @@
+# NOTE: this is YAML despite the .rviz extension.
+#
+# Fixed Frame is base_footprint, NOT odom. The robot has no encoders and the
+# ESP32 sends no feedback, so there is no odom -> base_footprint transform for
+# anything to publish. The consequence you will see: the robot stays put in
+# the middle of the screen and the laser scan sweeps around it as you drive.
+# That is correct behaviour for a robot with no odometry, not a bug. Switching
+# Fixed Frame to odom will simply show "Frame [odom] does not exist".
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /LaserScan1
+        - /Image1
+      Splitter Ratio: 0.5
+    Tree Height: 500
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Name: root
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: base_footprint
+    Frame Rate: 30
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Cell Size: 0.5
+      Plane: XY
+      Plane Cell Count: 20
+      Color: 160; 160; 164
+      Line Style:
+        Line Width: 0.03
+        Value: Lines
+      Reference Frame: base_footprint
+    - Class: rviz_default_plugins/RobotModel
+      Name: RobotModel
+      Enabled: true
+      Description Source: Topic
+      Description Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /robot_description
+      Alpha: 1
+      Collision Enabled: false
+      Visual Enabled: true
+      Update Interval: 0
+      TF Prefix: ""
+    - Class: rviz_default_plugins/LaserScan
+      Name: LaserScan
+      Enabled: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        # SensorDataQoS: the lidar driver publishes BEST_EFFORT. A Reliable
+        # subscriber will not match a BestEffort publisher and you get a
+        # silent, permanently empty display -- the single most common reason
+        # /scan "does not show up in RViz" over WiFi.
+        Reliability Policy: Best Effort
+        Value: /scan
+      Style: Points
+      Size (Pixels): 3
+      Size (m): 0.01
+      Alpha: 1
+      Decay Time: 0
+      Position Transformer: XYZ
+      Color Transformer: Intensity
+      Color: 255; 255; 255
+      Min Color: 0; 0; 0
+      Max Color: 255; 255; 255
+      Autocompute Intensity Bounds: true
+      Invert Rainbow: false
+      Use Fixed Frame: true
+      Use rainbow: true
+      Selectable: true
+    - Class: rviz_default_plugins/Image
+      Name: Image
+      Enabled: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /image_raw
+      Transport Hint: raw
+      Max Value: 1
+      Min Value: 0
+      Median window: 5
+      Normalize Range: true
+      Value: true
+    - Class: rviz_default_plugins/TF
+      Name: TF
+      Enabled: false
+      Show Names: true
+      Show Axes: true
+      Show Arrows: false
+      Marker Scale: 0.3
+      Update Interval: 0
+      Frame Timeout: 15
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+      Line color: 128; 128; 0
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Name: Current View
+      Distance: 4.0
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
+      Pitch: 0.72
+      Yaw: 3.14
+      Target Frame: base_footprint
+      Near Clip Distance: 0.01
+      Invert Z Axis: false
+    Saved: ~
+Window Geometry:
+  Displays:
+    collapsed: false
+  Views:
+    collapsed: false
+  Image:
+    collapsed: false
+  Height: 900
+  Width: 1600
+  QMainWindow State: ""

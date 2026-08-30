@@ -55,6 +55,19 @@
   <exec_depend>ros_gz_bridge</exec_depend>
   <exec_depend>gz_ros2_control</exec_depend>
 
+  <!-- Phase 3: real hardware (launch/robot.launch.py, launch/teleop.launch.py).
+       The drive path is UDP straight to the ESP32 and needs nothing but the
+       Python standard library, so esp32_bridge adds no dependency of its own.
+
+       sllidar_ros2 is NOT in the ROS index: it is a from-source checkout in the
+       same workspace (Slamtec/sllidar_ros2). rosdep resolves it because it is a
+       sibling package, and naming it here is what gives colcon the build order.
+       The C1 needs this driver specifically; the older rplidar_ros does not
+       support it. -->
+  <exec_depend>sllidar_ros2</exec_depend>
+  <exec_depend>v4l2_camera</exec_depend>
+  <exec_depend>teleop_twist_keyboard</exec_depend>
+
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
   <test_depend>ament_cmake_pytest</test_depend>

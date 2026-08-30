@@ -26,6 +26,7 @@ ament_python_install_package(${PROJECT_NAME})
 # a shebang; the logic lives in the installed package above.
 install(PROGRAMS
   scripts/kiwi_drive_node
+  scripts/esp32_bridge
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -38,10 +39,13 @@ if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
 
-  # Kinematics unit tests. These are pure Python and need no ROS graph, so
-  # they run under `colcon test` on any machine.
+  # Unit tests. Both are pure Python and need no ROS graph -- kiwi_kinematics
+  # and esp32_protocol are deliberately free of ROS imports -- so they run
+  # under `colcon test` on any machine, and under plain `pytest` on one with no
+  # ROS at all.
   find_package(ament_cmake_pytest REQUIRED)
   ament_add_pytest_test(test_kiwi_kinematics test/test_kiwi_kinematics.py)
+  ament_add_pytest_test(test_esp32_bridge test/test_esp32_bridge.py)
 endif()
 
 ament_package()
