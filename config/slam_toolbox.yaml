@@ -1,0 +1,116 @@
+# slam_toolbox, online async mapping, tuned for mmr_bot + RPLIDAR C1.
+#
+#   ros2 launch mmr_pkg slam.launch.py
+#
+# Started from slam_toolbox's own mapper_params_online_async.yaml for Jazzy.
+# Only the values below the "CHANGED" markers differ from that file; everything
+# else is upstream's default and is left alone deliberately, because a tuning
+# value copied without a reason is a value nobody can safely change later.
+#
+# READ THIS FIRST: slam_toolbox does not invent odometry. It needs a TF
+# odom -> base_footprint to already exist, and it corrects that estimate with
+# scan matching. This robot has NO ENCODERS, so nothing publishes odom on its
+# own -- slam.launch.py runs rf2o_laser_odometry to derive it from the lidar.
+# See docs/slam-and-nav2.md for why, and for what that costs you.
+slam_toolbox:
+  ros__parameters:
+
+    # ------------------------------------------------------------ plugins
+    solver_plugin: solver_plugins::CeresSolver
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
+    ceres_preconditioner: SCHUR_JACOBI
+    ceres_trust_strategy: LEVENBERG_MARQUARDT
+    ceres_dogleg_type: TRADITIONAL_DOGLEG
+    ceres_loss_function: None
+
+    # ------------------------------------------------------------- frames
+    # base_frame is base_footprint, NOT base_link. base_link is 45 mm up at
+    # the underside of the base plate; base_footprint is on the ground. SLAM
+    # is a 2D problem on the floor plane, and using base_link would put the
+    # map origin 45 mm in the air for no benefit. This matches the frame
+    # rf2o_laser_odometry is told to publish in slam.launch.py -- if you
+    # change one, change the other or the TF tree forks.
+    odom_frame: odom
+    map_frame: map
+    base_frame: base_footprint
+    scan_topic: /scan
+    use_map_saver: true
+    mode: mapping
+
+    # -------------------------------------------------------------- rates
+    debug_logging: false
+    throttle_scans: 1
+    transform_publish_period: 0.02
+    map_update_interval: 5.0
+    resolution: 0.05
+    restamp_tf: false
+
+    # CHANGED: RPLIDAR C1 is 0.05 - 12 m. Upstream defaults to 20 m, which is
+    # past what this lidar can return; leaving it there makes slam_toolbox
+    # treat the driver's max-range returns as real walls at 12 m and smear
+    # them into the map. The numbers come from the C1 datasheet and are the
+    # same ones urdf/gazebo.xacro simulates with, so sim and hardware agree.
+    min_laser_range: 0.05
+    max_laser_range: 12.0
+
+    minimum_time_interval: 0.5
+    transform_timeout: 0.2
+    tf_buffer_duration: 30.0
+    stack_size_to_use: 40000000
+    enable_interactive_mode: true
+
+    # ------------------------------------------------------------ general
+    use_scan_matching: true
+    use_scan_barycenter: true
+
+    # CHANGED: 0.5 m / 0.5 rad -> 0.2 m / 0.2 rad. Upstream's defaults are
+    # sized for a robot around a metre long. This one is 0.3 m across and gets
+    # driven around rooms and furniture, so half a metre between keyframes
+    # throws away most of the trip. 0.2 m keeps enough scans to close a loop
+    # around a desk without flooding the graph.
+    minimum_travel_distance: 0.2
+    minimum_travel_heading: 0.2
+
+    check_min_dist_and_heading_precisely: false
+    scan_buffer_size: 10
+
+    # CHANGED: 10.0 -> 12.0, to match the C1's actual reach set above.
+    scan_buffer_maximum_scan_distance: 12.0
+
+    link_match_minimum_response_fine: 0.1
+    link_scan_maximum_distance: 1.5
+    loop_search_maximum_distance: 3.0
+    do_loop_closing: true
+    loop_match_minimum_chain_size: 10
+    loop_match_maximum_variance_coarse: 3.0
+    loop_match_minimum_response_coarse: 0.35
+    loop_match_minimum_response_fine: 0.45
+
+    # -------------------------------------------------------- correlation
+    correlation_search_space_dimension: 0.5
+    correlation_search_space_resolution: 0.01
+    correlation_search_space_smear_deviation: 0.1
+
+    loop_search_space_dimension: 8.0
+    loop_search_space_resolution: 0.05
+    loop_search_space_smear_deviation: 0.03
+
+    # ------------------------------------------------------ scan matcher
+    # NOT CHANGED, but worth knowing why they matter more here than usual:
+    # these penalties say how much slam_toolbox trusts the incoming odometry
+    # pose against its own scan match. The odometry here IS a scan match
+    # (rf2o), so the two are not independent sources of evidence the way they
+    # are on a robot with encoders. If the map smears in a long corridor,
+    # this pair is where to look -- raising distance_variance_penalty tells
+    # slam_toolbox to lean less on rf2o's guess.
+    distance_variance_penalty: 0.5
+    angle_variance_penalty: 1.0
+
+    fine_search_angle_offset: 0.00349
+    coarse_search_angle_offset: 0.349
+    coarse_angle_resolution: 0.0349
+    minimum_angle_penalty: 0.9
+    minimum_distance_penalty: 0.5
+    use_response_expansion: true
+    min_pass_through: 2
+    occupancy_threshold: 0.1

@@ -86,6 +86,45 @@
   <exec_depend>v4l2_camera</exec_depend>
   <exec_depend>teleop_twist_keyboard</exec_depend>
 
+  <!-- Phase 3: the camera fix, not an optional extra.
+       v4l2_camera publishes through image_transport, but image_transport on
+       its own can only do raw. Raw 640x480 rgb8 is 921,600 bytes a frame, or
+       221 Mbit/s at 30 fps, which no WiFi link here will carry; without
+       this the video feed runs seconds behind and nothing logs why.
+       rviz/teleop.rviz already asks for the compressed topic.
+
+       compressed_image_transport specifically, not the image_transport_plugins
+       metapackage, because JPEG is what is actually used; theora and ffmpeg
+       would come along for the ride unused. Same reasoning as the three
+       ros2_controllers packages above.
+
+       INSTALL IT ON BOTH MACHINES. The Pi needs it to publish
+       /image_raw/compressed; the desktop needs it to decode. RViz Jazzy
+       offers the "compressed" transport hint whether or not the plugin is
+       present and ABORTS when it is not, so a missing desktop-side install
+       looks like RViz crashing rather than like a missing dependency. -->
+  <exec_depend>compressed_image_transport</exec_depend>
+
+  <!-- Phase 4: mapping and navigation (launch/slam.launch.py, nav2.launch.py).
+       Both are real rosdep keys, unlike sllidar_ros2 above.
+
+       nav2_bringup is named rather than the individual servers because
+       nav2.launch.py INCLUDES that package's navigation_launch.py and
+       localization_launch.py at launch time; the server list those files
+       manage changes between distros, and re-listing it here is how it drifts.
+       It pulls the servers in as its own dependencies.
+
+       rf2o_laser_odometry is DELIBERATELY NOT LISTED, for the same reason as
+       sllidar_ros2: it is a from-source checkout
+       (MAPIRlab/rf2o_laser_odometry, branch ros2), not a key in the ROS index,
+       so naming it makes `rosdep install` abort before resolving anything
+       else. It matters more than it looks: this robot has no encoders, so
+       rf2o is the ONLY source of odom -> base_footprint, and neither
+       slam_toolbox nor Nav2 will do anything at all without it. See
+       docs/slam-and-nav2.md. -->
+  <exec_depend>slam_toolbox</exec_depend>
+  <exec_depend>nav2_bringup</exec_depend>
+
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
   <test_depend>ament_cmake_pytest</test_depend>

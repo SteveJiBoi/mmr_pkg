@@ -50,6 +50,8 @@ turn. That is honest -- the robot genuinely does not know whether they are
 turning. Do not "fix" it by faking wheel positions from cmd_vel; that invents
 odometry the robot does not have.
 """
+from ament_index_python.packages import (PackageNotFoundError,
+                                         get_package_share_directory)
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, IncludeLaunchDescription,
                             LogInfo, OpaqueFunction)
@@ -198,6 +200,23 @@ def camera_setup(context, *_args, **_kwargs):
     TF at all, so the video feed works regardless. Only the *Camera* display
     needs a frame, and that one additionally needs a real intrinsic
     calibration, which this camera does not have. See README.
+
+    ON A LAGGY VIDEO FEED
+    ---------------------
+    There is nothing to configure on this node to fix it, which is exactly why
+    it is worth writing down here. /image_raw at the default 640x480 rgb8 is
+    640*480*3 = 921,600 bytes PER FRAME; at 30 fps that is 221 Mbit/s. A Pi 5
+    on 2.4 GHz WiFi carries a small fraction of that, so frames queue, and what
+    you see is the backlog rather than the present.
+
+    v4l2_camera already publishes through image_transport, so installing
+    ros-jazzy-image-transport-plugins ON THE PI adds /image_raw/compressed for
+    free -- roughly 15-20x smaller. rviz/teleop.rviz is already set to ask for
+    it. Nothing in this file changes.
+
+    If it is still slow after that, drop the resolution
+    (image_width:=320 image_height:=240 is 4x less data again) rather than
+    reaching for a different driver.
     """
     if LaunchConfiguration("camera").perform(context).lower() not in (
             "true", "1", "yes", "on"):
@@ -226,6 +245,20 @@ def camera_setup(context, *_args, **_kwargs):
             "camera: no camera_info_url, so /camera_info will be all zeros. "
             "The RViz *Image* display works regardless; the *Camera* display "
             "needs a real calibration and will not.")))
+
+    # Say this at launch time rather than leaving it to be rediscovered as
+    # "the video is laggy". Without the plugin v4l2_camera publishes raw only,
+    # and raw 640x480 rgb8 does not fit over WiFi -- so the symptom is a feed
+    # that runs seconds behind, with nothing in any log to explain it.
+    try:
+        get_package_share_directory("compressed_image_transport")
+    except (PackageNotFoundError, KeyError):
+        actions.append(LogInfo(msg=(
+            "camera: compressed_image_transport is NOT installed, so only raw "
+            "/image_raw will be published. At "
+            f"{size[0]}x{size[1]} rgb8 that is {size[0] * size[1] * 3:,} bytes "
+            "per frame and the feed will lag badly over WiFi. Fix with: "
+            "sudo apt install ros-jazzy-image-transport-plugins")))
 
     actions.append(Node(
         package="v4l2_camera",

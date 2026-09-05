@@ -84,12 +84,30 @@ Visualization Manager:
       Name: Image
       Enabled: true
       Topic:
-        Depth: 5
+        # Depth 1, not 5. A queue of five 640x480 rgb8 frames is 4.6 MB of
+        # backlog; once the link cannot keep up, RViz shows you the OLDEST
+        # frame in the queue and the video runs visibly behind the robot.
+        # Depth 1 throws away stale frames instead of displaying them, so the
+        # picture stays current even when frames are being dropped.
+        Depth: 1
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /image_raw
-      Transport Hint: raw
+      # compressed, not raw. 640x480 rgb8 is 921,600 bytes per frame -- at
+      # 30 fps that is 221 Mbit/s, which no 2.4 GHz WiFi link will carry, so
+      # the stream falls behind and never catches up. JPEG is roughly 15-20x
+      # smaller and fits comfortably.
+      #
+      # The topic Value stays /image_raw: image_transport appends
+      # "/compressed" itself. Naming /image_raw/compressed here would make
+      # RViz look for /image_raw/compressed/compressed and show nothing.
+      #
+      # This needs image_transport_plugins installed ON THE PI (to publish
+      # the compressed topic) AND on this desktop (to decode it). If the
+      # desktop plugin is missing, RViz Jazzy does not fall back -- it
+      # aborts. See docs/troubleshooting.md.
+      Transport Hint: compressed
       Max Value: 1
       Min Value: 0
       Median window: 5

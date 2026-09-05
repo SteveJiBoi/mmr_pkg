@@ -177,7 +177,17 @@ def check_packaging() -> None:
     # S17 bug 4. sllidar_ros2 is a workspace checkout, not a rosdep key, and
     # naming it aborts `rosdep install` before it resolves anything else.
     checks_run += 1
-    pkg = ET.parse(ROOT / "package.xml").getroot()
+    # Guarded, unlike every other ET.parse here. check_xml() has already
+    # reported a malformed package.xml with a line number and a reason;
+    # letting this one raise on the way past replaces that report with a
+    # traceback and abandons every check after it. Found the honest way: by
+    # writing "--" inside an XML comment in package.xml and getting a stack
+    # trace instead of the diagnostic this script exists to print.
+    try:
+        pkg = ET.parse(ROOT / "package.xml").getroot()
+    except ET.ParseError:
+        fail("package.xml", "not parseable; see the XML failures above")
+        return
     depends = {e.text for e in pkg.iter() if e.tag.endswith("depend")}
     if "sllidar_ros2" in depends:
         fail("package.xml",
@@ -273,6 +283,90 @@ def check_launch_names() -> None:
                          f"{node.id} is used but never imported or defined")
 
 
+# --------------------------------------------------- documented cross-refs
+# Number words the prose actually uses. Deliberately not a general
+# spelled-number parser: if a new word is needed the check should fail loudly
+# and be extended, rather than quietly stop verifying anything.
+NUMBER_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+    "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11,
+    "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+}
+
+# "N changes" / "N marked changes" / "N edits", however the sentence phrases it.
+COUNT_RE = re.compile(
+    r"\b([0-9]+|" + "|".join(NUMBER_WORDS) + r")\b[^.|]{0,40}?\b(?:changes|edits)\b",
+    re.IGNORECASE)
+
+
+def _changed_markers(path: pathlib.Path) -> int:
+    """Count `# CHANGED` markers in a config vendored from upstream.
+
+    The marker must OPEN the comment. That is what distinguishes a real change
+    from the file header describing the convention, and from the `# NOT
+    CHANGED, but worth knowing why` block, both of which contain the word.
+    """
+    return sum(1 for line in path.read_text(encoding="utf-8").splitlines()
+               if re.match(r"^#\s*CHANGED\b", line.strip()))
+
+
+def _status_todo_numbers() -> set[int]:
+    """The numbered TODO entries that actually exist in docs/status.md.
+
+    `[~*]` because a RESOLVED entry is written `1. ~~**...**~~`, and pointing
+    at a resolved TODO is still a valid reference -- the entry is what explains
+    why the thing is no longer a problem.
+    """
+    text = (ROOT / "docs" / "status.md").read_text(encoding="utf-8")
+    return {int(n) for n in re.findall(r"^(\d+)\.\s+[~*]", text, re.MULTILINE)}
+
+
+def check_doc_claims() -> None:
+    """Numbers the prose asserts about files, checked against those files.
+
+    Both of these drifted for real. The config change-counts in the README and
+    docs/ were written from memory and were wrong in both directions, and a
+    `TODO 19` in config/nav2.yaml pointed at "rf2o has never been run" when it
+    meant TODO 17, after the list was renumbered. An unverified cross-reference
+    is worse than none: it reads as authority while being wrong.
+    """
+    global checks_run
+
+    for name in ("slam_toolbox.yaml", "nav2.yaml"):
+        cfg = ROOT / "config" / name
+        if not cfg.exists():
+            continue
+        actual = _changed_markers(cfg)
+        for doc in [ROOT / "README.md"] + sorted((ROOT / "docs").glob("*.md")):
+            # Collapse newlines: these claims wrap mid-sentence in status.md.
+            text = re.sub(r"\s+", " ", doc.read_text(encoding="utf-8"))
+            for m in re.finditer(re.escape(f"config/{name}"), text):
+                window = text[m.end():m.end() + 200]
+                hit = COUNT_RE.search(window)
+                if not hit:
+                    continue
+                checks_run += 1
+                token = hit.group(1).lower()
+                claimed = NUMBER_WORDS.get(token, token)
+                if int(claimed) != actual:
+                    fail(rel(doc),
+                         f"says config/{name} has {hit.group(1)} changes; "
+                         f"it has {actual} CHANGED markers")
+
+    known = _status_todo_numbers()
+    if known:
+        for pattern in ("*.py", "*.yaml", "*.md", "*.xacro", "*.ino"):
+            for path in walk(pattern):
+                checks_run += 1
+                text = path.read_text(encoding="utf-8", errors="replace")
+                for m in re.finditer(r"\bTODO\s+(\d+)\b", text):
+                    if int(m.group(1)) not in known:
+                        line = text[:m.start()].count("\n") + 1
+                        fail(f"{rel(path)}:{line}",
+                             f"refers to TODO {m.group(1)}, which is not in "
+                             f"docs/status.md (it has {min(known)}-{max(known)})")
+
+
 def main() -> int:
     print("static checks (no ROS, no hardware)\n")
     for name, check in [
@@ -282,6 +376,7 @@ def main() -> int:
         ("yaml and rviz parse", check_yaml),
         ("packaging regressions", check_packaging),
         ("launch file names resolve", check_launch_names),
+        ("documented cross-references", check_doc_claims),
     ]:
         before = len(failures)
         check()
