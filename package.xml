@@ -10,7 +10,7 @@
     from TheRobotStudio/SO-ARM100.
   </description>
 
-  <maintainer email="TODO@todo.invalid">steve</maintainer>
+  <maintainer email="steve13122507206@gmail.com">steve</maintainer>
 
   <!-- TODO confirm: package licence. The vendored SO-101 meshes and URDF are
        Apache-2.0 from TheRobotStudio/SO-ARM100; see meshes/arm/LICENSE-NOTICE. -->

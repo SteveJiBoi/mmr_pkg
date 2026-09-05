@@ -557,7 +557,7 @@
   </ros2_control>
   <gazebo>
     <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
-      <parameters>C:\Users\steve\Desktop\mmr_pkg/config/controllers.yaml</parameters>
+      <parameters>/home/stevejidev/dev_ws/src/mmr_pkg/config/controllers.yaml</parameters>
     </plugin>
   </gazebo>
   <gazebo reference="wheel_0_link">

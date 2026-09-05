@@ -235,5 +235,6 @@
   <xacro:omni_wheel index="0" angle_deg="${wheel_0_angle_deg}"/>
   <xacro:omni_wheel index="1" angle_deg="${wheel_1_angle_deg}"/>
   <xacro:omni_wheel index="2" angle_deg="${wheel_2_angle_deg}"/>
+  
 
 </robot>
