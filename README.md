@@ -73,12 +73,14 @@ git clone -b ros2 https://github.com/MAPIRlab/rf2o_laser_odometry.git  # odometr
 | **3. The real robot** | `ros2 launch mmr_pkg robot.launch.py esp32_ip:=10.229.5.249` | Pi |
 | | `ros2 launch mmr_pkg teleop.launch.py` | desktop |
 | | `ros2 run mmr_pkg kb_teleop` | desktop, **own terminal, needs focus** |
-| **4. Map and navigate** | `ros2 launch mmr_pkg slam.launch.py` | desktop |
+| **4. Map while you drive** | `ros2 launch mmr_pkg teleop.launch.py slam:=true` | desktop, RViz + SLAM in one |
+| **5. Map and navigate** | `ros2 launch mmr_pkg slam.launch.py` | desktop |
 | | `ros2 launch mmr_pkg nav2.launch.py` | desktop |
 
 Common arguments: `esp32_ip:=`, `lidar:=false`, `camera:=false`, `bridge:=false`,
 `image_width:=`, `image_height:=`, `video_device:=`, `serial_port:=`.
 `gazebo.launch.py` takes `headless:=`, `rviz:=`, `world:=`.
+`teleop.launch.py` takes `slam:=`, `show_map:=`, `rviz_config:=`.
 
 Each driver can be disabled independently, and **one failing does not take the
 others down**: no node in `robot.launch.py` has an `on_exit` handler, so an
@@ -133,10 +135,26 @@ Three things worth knowing before you press a key:
 
 ## Mapping and navigation
 
+To drive around and watch the map build, two terminals on the desktop:
+
+```bash
+ros2 launch mmr_pkg robot.launch.py esp32_ip:=10.229.5.249  # Pi
+ros2 launch mmr_pkg teleop.launch.py slam:=true              # desktop: SLAM + RViz with the map
+ros2 run  mmr_pkg kb_teleop                                  # desktop, own terminal
+```
+
+`slam:=true` starts `slam.launch.py` alongside RViz and swaps in
+`rviz/mapping.rviz`, whose Fixed Frame is `map` so the map holds still and the
+robot moves through it. Running `slam.launch.py` yourself instead? Use
+`show_map:=true` to get the same view without starting a second `slam_toolbox`.
+
+The full set, when you want Nav2 as well:
+
 ```bash
 ros2 launch mmr_pkg robot.launch.py esp32_ip:=10.229.5.249  # Pi
 ros2 launch mmr_pkg slam.launch.py                           # desktop: odom + slam_toolbox
 ros2 launch mmr_pkg nav2.launch.py                           # desktop
+ros2 launch mmr_pkg teleop.launch.py show_map:=true          # desktop: RViz with the map
 ros2 run  mmr_pkg kb_teleop                                  # drive around to build the map
 
 ros2 run nav2_map_server map_saver_cli -f ~/my_map           # save it
@@ -279,7 +297,7 @@ mmr_pkg/
 ├── launch/     display.launch.py, gazebo.launch.py
 │               robot.launch.py, teleop.launch.py
 │               slam.launch.py, nav2.launch.py
-├── rviz/       display.rviz, teleop.rviz
+├── rviz/       display.rviz, teleop.rviz, mapping.rviz
 ├── generated/  robot.urdf, robot_phase1.urdf  ← expanded xacro, NOT named build/
 ├── esp32/      MotionTestOriginal.ino  ← the firmware: the authority on behaviour
 │               controller.py          ← the original pygame client

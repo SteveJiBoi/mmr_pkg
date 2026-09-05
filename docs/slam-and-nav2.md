@@ -11,8 +11,24 @@ Mapping with `slam_toolbox` and autonomous navigation with Nav2, on a robot with
 ros2 launch mmr_pkg robot.launch.py esp32_ip:=10.229.5.249   # Pi
 ros2 launch mmr_pkg slam.launch.py                            # desktop
 ros2 launch mmr_pkg nav2.launch.py                            # desktop
+ros2 launch mmr_pkg teleop.launch.py show_map:=true           # desktop, RViz with the map
 ros2 run  mmr_pkg kb_teleop                                   # desktop, drive it around
 ```
+
+Just mapping, without Nav2? `teleop.launch.py slam:=true` runs `slam.launch.py`
+and RViz together, so that whole list collapses to the Pi plus two desktop
+terminals:
+
+```bash
+ros2 launch mmr_pkg robot.launch.py esp32_ip:=10.229.5.249   # Pi
+ros2 launch mmr_pkg teleop.launch.py slam:=true               # desktop
+ros2 run  mmr_pkg kb_teleop                                   # desktop, drive it around
+```
+
+Pass `slam:=true` **or** run `slam.launch.py` yourself, never both: two
+`slam_toolbox` nodes will both publish `map → odom` and the robot will jump
+between their two estimates. See [Exactly one thing may publish `map →
+odom`](#exactly-one-thing-may-publish-map--odom).
 
 **None of this has been run.** There is no ROS on the machine that wrote it.
 See [status.md](status.md#not-checked-here--please-run-these) for the specific

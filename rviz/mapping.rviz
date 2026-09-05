@@ -1,0 +1,209 @@
+# NOTE: this is YAML despite the .rviz extension.
+#
+# Teleop WHILE MAPPING. This is teleop.rviz plus a Map display, and with one
+# important difference: Fixed Frame is `map`, not `base_footprint`.
+#
+# WHY THE FIXED FRAME DIFFERS FROM teleop.rviz
+# --------------------------------------------
+# teleop.rviz uses base_footprint because with nothing but the robot running
+# there is no odom and no map, so the robot is the only frame that exists.
+# The consequence documented there is that the robot sits still and the world
+# sweeps around it.
+#
+# That is exactly the wrong way round for mapping. You need the MAP to hold
+# still and the ROBOT to move through it, or you cannot tell whether the map
+# is being built correctly. So this config anchors to `map`, which requires
+# the full chain to exist:
+#
+#     map -> odom              slam_toolbox
+#     odom -> base_footprint   rf2o_laser_odometry
+#     base_footprint -> ...    robot_state_publisher (on the Pi)
+#
+# Both of the first two come from slam.launch.py. If it is NOT running you
+# will see "Fixed Frame [map] does not exist" and an empty screen -- that is
+# this config being used without its prerequisite, not a broken robot. Use
+# teleop.rviz for driving without SLAM.
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /Map1
+        - /LaserScan1
+      Splitter Ratio: 0.5
+    Tree Height: 500
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Name: root
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: map
+    Frame Rate: 30
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Cell Size: 1.0
+      Plane: XY
+      Plane Cell Count: 40
+      Color: 160; 160; 164
+      Line Style:
+        Line Width: 0.03
+        Value: Lines
+      # Anchored to map, not base_footprint: a grid that moves with the robot
+      # gives you no sense of how far it has actually travelled.
+      Reference Frame: map
+    - Class: rviz_default_plugins/Map
+      Name: Map
+      Enabled: true
+      # Settings below match nav2_bringup/rviz/nav2_default_view.rviz, which
+      # is the reference config for this display. Alpha is the one deliberate
+      # difference: 0.7 rather than 1, so the laser scan stays readable on top
+      # of the grid while driving.
+      Topic:
+        # Depth 1, as nav2 uses. The topic is latched, so a deeper queue only
+        # holds extra copies of a full occupancy grid in memory.
+        Depth: 1
+        # TRANSIENT LOCAL, and this is the one setting that silently breaks
+        # the display. slam_toolbox latches /map: it publishes a full grid on
+        # every update but a late subscriber only receives one if the QoS
+        # durability matches. A Volatile subscriber connects, reports no
+        # error, and shows an empty screen until the next map update happens
+        # to arrive -- which on a stationary robot may be never.
+        Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /map
+      # Draw Behind keeps the occupancy grid under the laser scan and the
+      # robot model rather than z-fighting with them on the ground plane.
+      Draw Behind: true
+      Alpha: 0.7
+      Color Scheme: map
+      Binary representation: false
+      Binary threshold: 100
+      Update Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /map_updates
+      Use Timestamp: false
+      Value: true
+    - Class: rviz_default_plugins/RobotModel
+      Name: RobotModel
+      Enabled: true
+      Description Source: Topic
+      Description Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /robot_description
+      Alpha: 1
+      Collision Enabled: false
+      Visual Enabled: true
+      Update Interval: 0
+      TF Prefix: ""
+    - Class: rviz_default_plugins/LaserScan
+      Name: LaserScan
+      Enabled: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        # Best Effort for the same reason as teleop.rviz: the lidar driver
+        # publishes BEST_EFFORT and a Reliable subscriber will not match it.
+        Reliability Policy: Best Effort
+        Value: /scan
+      Style: Points
+      Size (Pixels): 3
+      Size (m): 0.01
+      Alpha: 1
+      Decay Time: 0
+      Position Transformer: XYZ
+      Color Transformer: FlatColor
+      # Flat red rather than Intensity: against a greyscale occupancy grid,
+      # intensity-coloured points are hard to separate from the map itself.
+      Color: 255; 40; 40
+      Min Color: 0; 0; 0
+      Max Color: 255; 255; 255
+      Autocompute Intensity Bounds: true
+      Invert Rainbow: false
+      Use Fixed Frame: true
+      Use rainbow: true
+      Selectable: true
+    - Class: rviz_default_plugins/Image
+      Name: Image
+      Enabled: true
+      Topic:
+        # Depth 1: see teleop.rviz. A backlog of frames makes the video run
+        # behind the robot, which matters more here because you are steering
+        # by it while watching the map build.
+        Depth: 1
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /image_raw
+      Transport Hint: compressed
+      Max Value: 1
+      Min Value: 0
+      Median window: 5
+      Normalize Range: true
+      Value: true
+    - Class: rviz_default_plugins/TF
+      Name: TF
+      # Enabled here, unlike teleop.rviz. While mapping, map -> odom ->
+      # base_footprint is the thing most likely to be wrong, and seeing the
+      # frames is how you notice rf2o has lost its lock: odom starts sliding
+      # away from map with the robot standing still.
+      Enabled: true
+      Show Names: true
+      Show Axes: true
+      Show Arrows: false
+      Marker Scale: 0.3
+      Update Interval: 0
+      Frame Timeout: 15
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+      Line color: 128; 128; 0
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Name: Current View
+      # Target Frame base_footprint with Fixed Frame map: the camera FOLLOWS
+      # the robot while the map stays put, which is what you want when
+      # driving. Clear Target Frame to <Fixed Frame> to pin the camera and
+      # watch the robot drive across a stationary map instead.
+      Target Frame: base_footprint
+      Distance: 8.0
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
+      # Steeper than teleop.rviz's 0.72: closer to a plan view, because a map
+      # is a floor-plane object and is hard to read at a shallow angle.
+      Pitch: 1.1
+      Yaw: 3.14
+      Near Clip Distance: 0.01
+      Invert Z Axis: false
+    Saved: ~
+Window Geometry:
+  Displays:
+    collapsed: false
+  Views:
+    collapsed: false
+  Image:
+    collapsed: false
+  Height: 900
+  Width: 1600
+  QMainWindow State: ""
