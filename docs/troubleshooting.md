@@ -17,6 +17,94 @@ can run, not a thing to eyeball.
 | Nothing happens when you press keys | The terminal lost focus | Click the `kb_teleop` window. It must keep focus |
 | `kb_teleop` exits immediately saying stdin is not a TTY | You launched it from a launch file or through a pipe | Run it directly in its own terminal. It refuses rather than silently publishing zeros forever |
 
+### Bisect it in four commands
+
+Each one tells you which half of the chain to stop looking at. Run them in
+order and stop at the first that fails.
+
+```bash
+ros2 topic hz /cmd_vel        # 1. desktop: is the keyboard producing anything?
+ros2 topic list | grep scan   # 2. desktop: can you see the Pi's graph at all?
+ros2 topic echo /diagnostics  # 3. Pi: is the bridge reaching the ESP32?
+python tools/find_esp32.py    # 4. Pi: what address is the ESP32 actually on?
+```
+
+1. **No `/cmd_vel`** — the problem is `kb_teleop`, not the robot. It must be
+   the focused terminal, and it must be a real TTY.
+2. **`/cmd_vel` is there but no `/scan`** — the two machines cannot see each
+   other. Same network, same `ROS_DOMAIN_ID`, and no client isolation on the
+   AP. `/cmd_vel` published on the desktop never reaches a bridge on the Pi.
+3. **`state: down` with `replies_received: 0`** — ROS is fine and the ESP32 is
+   not answering. Go to step 4.
+4. **`find_esp32.py` reports an address that is not the one you launched
+   with** — that was the whole problem. Relaunch with the address it found.
+
+### The ESP32 address is a DHCP lease, not a fixed property
+
+The single most common cause of "no movement, no error". The board prints its
+address once at boot and nothing reports it again; that number then lives in
+your launch command until a lease expires or the network changes underneath
+it. `esp32_ip` in `launch/robot.launch.py` defaults to `10.229.5.249`, which
+was correct on the network it was written on and is **not** a guarantee.
+
+```bash
+python tools/find_esp32.py             # sweeps every local subnet
+python tools/find_esp32.py 10.0.0.0/24 # or just one
+```
+
+It uses the firmware's own `PING` → `PONG`, so a reply proves the board is
+powered, on WiFi, listening and parsing — not merely that something holds the
+address, which is all an ICMP ping proves. **Run it on the Pi**, or on any
+machine on the robot's subnet.
+
+### Can I drive it over the USB cable instead?
+
+**Not without a firmware change.** It is worth being precise about why, because
+the cable is genuinely useful for diagnosing this — just not for control.
+
+`esp32/MotionTestOriginal/MotionTestOriginal.ino` contains no `Serial.read()`,
+no `Serial.available()`, nothing that reads the port at all. `Serial` is
+print-only debug output. The only thing that ever produces a motor command is
+`parsePacket()`, and its single caller is the `udp.onPacket()` callback. So
+commands arrive by UDP or they do not arrive.
+
+Worse, WiFi is not optional in the current sketch:
+
+```cpp
+WiFi.begin(ssid, password);
+if (WiFi.waitForConnectResult() != WL_CONNECTED) {
+  Serial.println("WiFi failed");
+  while (1) delay(1000);          // never returns
+}
+```
+
+If the network is not there, `setup()` never finishes, `udp.listen()` never
+runs, and the board sits in that loop with the motors stopped no matter what
+ROS does. A robot cabled to the Pi with no WiFi is a robot that cannot be
+driven by this firmware.
+
+**What the cable is for.** It carries the boot log, which is the fastest
+diagnostic available and the only thing that distinguishes the two failures
+above from each other:
+
+```bash
+screen /dev/ttyUSB0 115200      # or /dev/ttyACM0; Ctrl-A then K to quit
+```
+
+Tap the board's EN/RST button and read:
+
+| Boot log says | Meaning |
+|---|---|
+| `Ready. IP: <address>` then `UDP listening on port 1234` | Healthy. Use that address as `esp32_ip:=` |
+| `WiFi failed` | Stuck in the retry loop. Fix the network or the credentials; nothing on the ROS side can help |
+| nothing at all | Wrong port, wrong baud, or the board is not powered |
+
+The SSID and password are compiled in (`ssid = "test"`), so a new network means
+reflashing, not a config change. If you want serial control as a real
+transport, that is a firmware feature to add — read `Serial` in `loop()` and
+feed the same line into `parsePacket()`'s parser — plus a matching transport in
+`mmr_pkg/esp32_bridge.py`, which is UDP-only today.
+
 ## It moves, but wrongly
 
 | What you see | Cause | Fix |

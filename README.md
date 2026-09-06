@@ -90,7 +90,7 @@ running. Adding a single `Shutdown` handler would quietly undo that.
 Checks that need no build, no ROS and no hardware:
 
 ```bash
-python tools/check_repo.py     # 0 failures over 138 checks, under a second
+python tools/check_repo.py     # 0 failures over 141 checks, under a second
 python -m pytest test/ -q      # 119 passed
 ```
 
@@ -314,6 +314,8 @@ mmr_pkg/
 └── tools/      STEP parsing, mesh extraction, and the offline xacro/URDF/control
                 checkers, firmware_diff.py and check_repo.py. Not installed —
                 these are provenance for every number, not runtime code.
+                find_esp32.py is the exception that talks to hardware: it
+                sweeps the network for the board when esp32_ip has gone stale.
 ```
 
 The `mmr_pkg/` modules come in pairs on purpose: a file with **no ROS imports**
