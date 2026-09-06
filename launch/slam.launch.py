@@ -12,6 +12,20 @@ Save the map when the room looks right:
 
     ros2 run nav2_map_server map_saver_cli -f ~/my_map
 
+SLAM_TOOLBOX IS A LIFECYCLE NODE
+--------------------------------
+It does nothing until something transitions it to `active`. This file does
+that (autostart:=true by default). If /map ever has no publisher and the map
+frame is missing while /scan and odom are both fine, that is the first thing
+to check:
+
+    ros2 lifecycle get /slam_toolbox        # want: active [3]
+    ros2 lifecycle set /slam_toolbox configure
+    ros2 lifecycle set /slam_toolbox activate
+
+Pass use_lifecycle_manager:=true to hand the transitions to Nav2's manager
+instead; autostart is then ignored, because exactly one thing may drive them.
+
 WHY THIS RUNS ON THE DESKTOP
 ----------------------------
 /scan is about 20 kB/s -- 500 points at 10 Hz -- so shipping it over WiFi is
@@ -57,12 +71,18 @@ odometry; with nothing publishing odom, slam_toolbox will sit and log
 transform timeouts.
 """
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import (DeclareLaunchArgument, EmitEvent, LogInfo,
+                            RegisterEventHandler)
 from launch.conditions import IfCondition
-from launch.substitutions import (LaunchConfiguration, PathJoinSubstitution,
+from launch.events import matches_action
+from launch.substitutions import (AndSubstitution, LaunchConfiguration,
+                                  NotSubstitution, PathJoinSubstitution,
                                   PythonExpression)
-from launch_ros.actions import Node
+from launch_ros.actions import LifecycleNode, Node
+from launch_ros.event_handlers import OnStateTransition
+from launch_ros.events.lifecycle import ChangeState
 from launch_ros.substitutions import FindPackageShare
+from lifecycle_msgs.msg import Transition
 
 
 def generate_launch_description():
@@ -88,6 +108,14 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "use_sim_time", default_value="false",
             description="true when mapping inside Gazebo"),
+        DeclareLaunchArgument(
+            "autostart", default_value="true",
+            description="Drive slam_toolbox through configure+activate on "
+                        "start-up. Ignored when use_lifecycle_manager is true"),
+        DeclareLaunchArgument(
+            "use_lifecycle_manager", default_value="false",
+            description="Let an external lifecycle manager (Nav2's) own the "
+                        "transitions instead of this file"),
     ]
 
     # freq is 10.0, not rf2o's own default of 20.0. The C1 produces 10 scans a
@@ -117,10 +145,25 @@ def generate_launch_description():
                               "' == 'rf2o'"])),
     )
 
-    slam = Node(
+    # A LIFECYCLE NODE, and it must be driven or it does nothing at all.
+    #
+    # This was a plain Node until it was caught on the robot: slam_toolbox
+    # started, appeared in `ros2 node list`, logged no error, and sat in
+    # `unconfigured` forever. In that state it subscribes to nothing, so
+    # /map had zero publishers and the map frame never existed, while
+    # /scan and odom -> base_footprint were both perfectly healthy. Nothing
+    # anywhere said why. `ros2 lifecycle get /slam_toolbox` is how you see it.
+    #
+    # The configure+activate pair below is copied from slam_toolbox's own
+    # launch/online_async_launch.py, which is the reference for this.
+    autostart = LaunchConfiguration("autostart")
+    use_lifecycle_manager = LaunchConfiguration("use_lifecycle_manager")
+
+    slam = LifecycleNode(
         package="slam_toolbox",
         executable="async_slam_toolbox_node",
         name="slam_toolbox",
+        namespace="",
         output="screen",
         # async, not sync: sync blocks until every scan is processed, which on
         # a live robot means falling progressively further behind rather than
@@ -128,8 +171,38 @@ def generate_launch_description():
         parameters=[
             LaunchConfiguration("slam_params"),
             {"use_sim_time": use_sim_time,
+             "use_lifecycle_manager": use_lifecycle_manager,
              "scan_topic": scan_topic},
         ],
     )
 
-    return LaunchDescription(args + [odom, slam])
+    # Both events are skipped when an external manager owns the node, hence
+    # the AndSubstitution: exactly one thing may drive the transitions.
+    drive_it = IfCondition(
+        AndSubstitution(autostart, NotSubstitution(use_lifecycle_manager)))
+
+    configure = EmitEvent(
+        event=ChangeState(lifecycle_node_matcher=matches_action(slam),
+                          transition_id=Transition.TRANSITION_CONFIGURE),
+        condition=drive_it,
+    )
+
+    # Activation cannot be emitted with configure: the node has to REACH
+    # `inactive` first, so it hangs off the state transition rather than a
+    # timer.
+    activate = RegisterEventHandler(
+        OnStateTransition(
+            target_lifecycle_node=slam,
+            start_state="configuring",
+            goal_state="inactive",
+            entities=[
+                LogInfo(msg="[slam.launch.py] slam_toolbox configured, activating"),
+                EmitEvent(event=ChangeState(
+                    lifecycle_node_matcher=matches_action(slam),
+                    transition_id=Transition.TRANSITION_ACTIVATE)),
+            ],
+        ),
+        condition=drive_it,
+    )
+
+    return LaunchDescription(args + [odom, slam, configure, activate])

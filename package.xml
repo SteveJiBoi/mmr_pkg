@@ -124,6 +124,10 @@
        docs/slam-and-nav2.md. -->
   <exec_depend>slam_toolbox</exec_depend>
   <exec_depend>nav2_bringup</exec_depend>
+  <!-- slam.launch.py drives slam_toolbox's lifecycle itself (it is a
+       LifecycleNode and does nothing until activated), so the launch file
+       imports lifecycle_msgs for the Transition ids. -->
+  <exec_depend>lifecycle_msgs</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

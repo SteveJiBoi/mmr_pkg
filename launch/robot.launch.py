@@ -126,6 +126,11 @@ def generate_launch_description():
                               description="Start the USB camera driver"),
         DeclareLaunchArgument("bridge", default_value="true",
                               description="Start the ESP32 UDP drive bridge"),
+        DeclareLaunchArgument(
+            "inverted", default_value="false",
+            description="Reverse the lidar's angular order. Set true if the "
+                        "map comes out mirrored; see the note by the lidar "
+                        "include before changing urdf/sensors.xacro instead"),
     ]
 
     description = [
@@ -152,6 +157,24 @@ def generate_launch_description():
     # not in the TF tree is invisible in RViz with only a warning to show for
     # it. Overriding the driver is better than adding a
     # static_transform_publisher to paper over the mismatch.
+    # `inverted` is forwarded because it is the knob for a MIRRORED map, and
+    # it is not obvious that it is a driver setting rather than a URDF one.
+    #
+    # In sllidar_node.cpp the flag does exactly one thing:
+    #     reverse_data = (!inverted && reversed) || (inverted && !reversed)
+    # It reverses the order the ranges array is filled. angle_min/angle_max are
+    # computed identically either way, so flipping it mirrors the scan about
+    # the sensor's X axis and nothing else.
+    #
+    # Default stays false, which is the driver's own default. If the map comes
+    # out as a mirror image of the room, try inverted:=true BEFORE touching
+    # urdf/sensors.xacro. The URDF says rpy is identity because the CAD says
+    # the C1 bolts upright to the top plate, verified against the datasheet to
+    # within a micron; putting a roll of pi there to cancel a driver
+    # convention would make the description lie about the hardware. Only
+    # change the URDF if the lidar is PHYSICALLY upside down on your build, in
+    # which case laser_z needs recomputing too -- the datasheet's 29.8 mm is
+    # measured from the mounting face, which would then be on top.
     lidar = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(PathJoinSubstitution(
             [FindPackageShare("sllidar_ros2"), "launch",
@@ -159,6 +182,7 @@ def generate_launch_description():
         launch_arguments={
             "frame_id": "laser_frame",
             "serial_port": LaunchConfiguration("serial_port"),
+            "inverted": LaunchConfiguration("inverted"),
         }.items(),
         condition=IfCondition(LaunchConfiguration("lidar")),
     )

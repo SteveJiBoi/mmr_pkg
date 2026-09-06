@@ -114,6 +114,20 @@ feed the same line into `parsePacket()`'s parser — plus a matching transport i
 | Drives smoothly but not in the commanded direction; yaw bleeds into translation | Classic symptom of a 30° wheel-angle error | [Read this](hardware.md#the-30-wheel-angle-discrepancy--read-this-before-driving) |
 | Keeps coasting after you release a key | `key_timeout` too long for your terminal's auto-repeat | Lower it. A terminal has no key-up event, so release is *inferred* — see [TODO 16](status.md#assumptions-and-todos) |
 
+## The map never appears
+
+| What you see | Cause | What to do |
+|---|---|---|
+| RViz Map display empty, `/map` has **0 publishers**, no `map` frame — while `/scan` and `odom → base_footprint` are both fine | `slam_toolbox` is a **lifecycle node** sitting in `unconfigured`. It subscribes to nothing and logs nothing | `ros2 lifecycle get /slam_toolbox` — want `active [3]`. Fixed in `slam.launch.py`, which now drives configure+activate; if you start `slam_toolbox` by hand you must do it yourself |
+| `/odom` never publishes; rf2o logs `Waiting for laser_scans....` | rf2o is not receiving `/scan`. On a split desktop/Pi setup this is nearly always the network, not the code | `ros2 topic hz /scan` on the machine running rf2o. rf2o subscribes `best_effort`, so it is **not** a QoS mismatch |
+| Two `/rf2o_laser_odometry` nodes, or ROS warns about duplicate node names | SLAM started twice — `teleop.launch.py slam:=true` **and** `slam.launch.py` | Run one or the other. Duplicate node names are undefined behaviour: parameter sets collide and instances shadow each other |
+| Map builds but is geometrically wrong | rf2o initialised before `base_footprint → laser_frame` arrived. Its `setLaserPoseFromTf()` logs the failure, then carries on with a **zero transform**, and the caller ignores the return value | Restart rf2o once the Pi's TF is up. Upstream bug, not fixable from config |
+
+The lifecycle one deserves emphasis: every other part of the chain reports its
+own failure, and this one does not. `slam_toolbox` appears in `ros2 node list`,
+answers parameter queries, exits cleanly, and produces nothing. The only thing
+that tells you is `ros2 lifecycle get`.
+
 ## Nothing shows up in RViz
 
 | What you see | Cause | Fix |
