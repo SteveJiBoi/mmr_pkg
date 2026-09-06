@@ -138,7 +138,7 @@ Three things worth knowing before you press a key:
 To drive around and watch the map build, two terminals on the desktop:
 
 ```bash
-ros2 launch mmr_pkg robot.launch.py esp32_ip:=10.229.5.249  # Pi
+ros2 launch mmr_pkg robot.launch.py esp32_ip:=10.115.35.249  # Pi
 ros2 launch mmr_pkg teleop.launch.py slam:=true              # desktop: SLAM + RViz with the map
 ros2 run  mmr_pkg kb_teleop                                  # desktop, own terminal
 ```
